@@ -68,10 +68,32 @@ export default function Evaluator() {
     const [progressStats, setProgressStats] = useState({ completed: [] as PROGRAM_COURSE[], enrolled: [] as PROGRAM_COURSE[], remaining: [] as PROGRAM_COURSE[] });
     const [isLoading, setIsLoading] = useState(false);
 
+    // NEW: Local term state for batch encoding historical grades without altering global state
+    const [localTerm, setLocalTerm] = useState<string>(activeTerm);
+
     const searchResults = students.filter(s => s.studLastName.toLowerCase().includes(searchQuery.toLowerCase()) || s.studFirstName.toLowerCase().includes(searchQuery.toLowerCase()) || s.studentID.includes(searchQuery));
     const termStanding = standings.find(ts => ts.studentID === selectedStudent?.studentID && ts.termID === activeTerm);
     const termDetails = terms.find(t => t.termID === activeTerm);
     const historyStandings = standings.filter(ts => ts.studentID === selectedStudent?.studentID);
+
+    // Derivations for the local encoding term
+    const localTermDetails = terms.find(t => t.termID === localTerm);
+    const activeTermObj = terms.find(t => t.termID === activeTerm);
+
+    const availableTerms = terms.filter(t => {
+        if (!activeTermObj) return false;
+        if (t.termSY !== activeTermObj.termSY) return t.termSY.localeCompare(activeTermObj.termSY) <= 0;
+        const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+        return semWeights[t.termSem] <= semWeights[activeTermObj.termSem];
+    }).sort((a, b) => {
+        if (a.termSY !== b.termSY) return b.termSY.localeCompare(a.termSY);
+        const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+        return semWeights[b.termSem] - semWeights[a.termSem];
+    });
+
+    useEffect(() => {
+        setLocalTerm(activeTerm);
+    }, [activeTerm, selectedStudent]);
 
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
@@ -100,18 +122,18 @@ export default function Evaluator() {
         let isMounted = true;
         const fetchBackendData = async () => {
             setIsLoading(true);
-            const rows = await backendAPI.getEnrichedGrades(selectedStudent, activeTerm, termDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses);
+            // REVISED: Grade encoding tab now pulls grades strictly based on the localTerm
+            const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses);
             const prog = await backendAPI.getCurriculumProgress(selectedStudent, activeTerm, programCourses, records);
             if (isMounted) { setDisplayRows(rows); setProgressStats(prog); setIsLoading(false); }
         };
         void fetchBackendData();
-        return () => { isMounted = false; };
-    }, [selectedStudent, activeTerm, termDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses]);
+    }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm]);
 
     const handleAutoPopulate = async () => {
-        if (!activeUser || !selectedStudent || !termDetails) return;
-        const newRecords = await backendAPI.generateAutoPopulateRecords(selectedStudent, activeTerm, termDetails, programCourses, records, activeUser.userID);
-        if (newRecords.length > 0) { setRecords([...records, ...newRecords]); pushAudit("AUTO_POPULATED_TERM_GRADES", selectedStudent.studentID); }
+        if (!activeUser || !selectedStudent || !localTermDetails) return;
+        const newRecords = await backendAPI.generateAutoPopulateRecords(selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID);
+        if (newRecords.length > 0) { setRecords([...records, ...newRecords]); pushAudit(`AUTO_POPULATED_GRADES_${localTerm}`, selectedStudent.studentID); }
     };
 
     const handleAddExtraCourse = async (courseCode: string) => {
@@ -120,14 +142,14 @@ export default function Evaluator() {
         if (!activeProgram) return;
 
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
-            courseCode, "", undefined, selectedStudent, activeTerm, records,
+            courseCode, "", undefined, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms
         );
 
         if (error) return alert(error);
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
-        pushAudit("ADDED_SUBJECT_TO_TERM", selectedStudent.studentID);
+        pushAudit(`ADDED_SUBJECT_${localTerm}`, selectedStudent.studentID);
         setShowExtraCourseDropdown(false);
     };
 
@@ -137,7 +159,7 @@ export default function Evaluator() {
         if (!activeProgram) return;
 
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
-            code, val, recordID, selectedStudent, activeTerm, records,
+            code, val, recordID, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms
         );
 
@@ -153,7 +175,7 @@ export default function Evaluator() {
         if (!activeProgram) return;
 
         const { recordsData, standingsData, error } = await backendAPI.deleteGradeRow(
-            recordID, records, selectedStudent.studentID, activeTerm,
+            recordID, records, selectedStudent.studentID, localTerm,
             programCourses, courses, activeProgram, standings, terms
         );
 
@@ -387,12 +409,26 @@ export default function Evaluator() {
                         <>
                             {activeTab === "grades" && (
                                 <div className="flex h-full flex-col">
-                                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 p-4">
-                                        <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Encoded Subjects ({displayRows.length})</div>
+                                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 p-4 flex-wrap gap-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Encoded Subjects ({displayRows.length})</div>
+                                            {/* REVISED: New Dropdown for Batch Term Selection */}
+                                            <select
+                                                value={localTerm}
+                                                onChange={e => setLocalTerm(e.target.value)}
+                                                className="rounded-md border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"
+                                            >
+                                                {availableTerms.map(t => (
+                                                    <option key={t.termID} value={t.termID}>
+                                                        {t.termSem}, AY {t.termSY} {t.termID === activeTerm ? "(Current)" : ""}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                         {can('encode_grades') && (
                                             <div className="flex gap-2">
                                                 <button onClick={handleAutoPopulate} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400">
-                                                    Auto-Populate Current Term
+                                                    Auto-Populate Term
                                                 </button>
                                                 <div className="relative">
                                                     <button onClick={() => setShowExtraCourseDropdown(!showExtraCourseDropdown)} className="rounded-md bg-blue-700 dark:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700">
@@ -482,7 +518,6 @@ export default function Evaluator() {
                                                                             <tr key={rec.recordID} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
                                                                                 <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
                                                                                 <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
-                                                                                {/* Maps null correctly to display the remark instead */}
                                                                                 <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade) : (rec.gradeRemarks || '-')}</td>
                                                                             </tr>
                                                                         )
