@@ -62,7 +62,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [activeUser, setActiveUser] = useState<COMPASS_USER | null>(null);
-    const [activeTerm, setActiveTerm] = useState<string>("T2025-1");
+    const [activeTerm, setActiveTerm] = useState<string>("");
 
     const [students, setStudents] = useState<EnrichedStudent[]>([]);
     const [programs, setPrograms] = useState<DEGREE_PROGRAM[]>([]);
@@ -99,6 +99,13 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                 setRecords(data.records);
                 setTerms(data.terms);
                 setCoursePrerequisites(data.coursePrerequisites);
+
+                // FIXED: Injects Audit Log data seamlessly
+                setAuditLogs(data.auditLogs || []);
+
+                const currentTerm = data.terms.find(t => t.isCurrent);
+                if (currentTerm) setActiveTerm(currentTerm.termID);
+                else if (data.terms.length > 0) setActiveTerm(data.terms[0].termID);
             } else {
                 console.error("Database connection failed:", error);
             }
@@ -133,10 +140,10 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             case 'manage_curriculum':
             case 'generate_forms':
             case 'archive_student':
-                return type === 'Deans Office_Staff';
+                return type === 'Deans_Office_Staff';
             case 'view_records':
             case 'add_remarks':
-                return type === 'Deans Office_Staff' || type === 'Faculty';
+                return type === 'Deans_Office_Staff' || type === 'Faculty';
             default:
                 return false;
         }

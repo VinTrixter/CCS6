@@ -1,16 +1,19 @@
 // src/components/Settings.tsx
 import React, { useState, useEffect } from "react";
 import { useStore } from "../store/store";
+import { backendAPI } from "../backend/api";
+import type { ACADEMIC_TERM } from "../store/types";
 import * as I from "./icons";
 
 type SettingsTab = "profile" | "system" | "audit";
 
 export default function Settings() {
-    const { activeUser, setActiveUser, activeTerm, setActiveTerm, auditLogs, can, pushAudit, pendingSettingsTab, setPendingSettingsTab, terms } = useStore();
+    const { activeUser, setActiveUser, activeTerm, setActiveTerm, auditLogs, can, pushAudit, pendingSettingsTab, setPendingSettingsTab, terms, setTerms } = useStore();
     const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
     const [newTermForm, setNewTermForm] = useState({ sy: "", sem: "1st Semester" });
     const [auditFilters, setAuditFilters] = useState({ start: "", end: "", user: "", action: "", target: "" });
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (pendingSettingsTab) {
@@ -29,13 +32,25 @@ export default function Settings() {
         alert("Profile updated successfully (Mock).");
     };
 
-    const handleSystemSave = (e: React.SyntheticEvent) => {
+    const handleSystemSave = async (e: React.SyntheticEvent) => {
         e.preventDefault();
-        pushAudit("UPDATED_ACTIVE_TERM", activeTerm);
-        alert("System environment variables updated.");
+        setIsSaving(true);
+
+        // Push the active term toggle to the database (Ensures old term = false, new term = true)
+        const { error } = await backendAPI.updateActiveTerm(activeTerm);
+
+        if (error) {
+            alert("Database Error: Could not update active term. " + error);
+        } else {
+            // Update local state to reflect the database
+            setTerms(terms.map(t => ({ ...t, isCurrent: t.termID === activeTerm })));
+            pushAudit("UPDATED_ACTIVE_TERM", activeTerm);
+            alert("System environment variables updated successfully.");
+        }
+        setIsSaving(false);
     };
 
-    const handleAddTerm = (e: React.SyntheticEvent) => {
+    const handleAddTerm = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!newTermForm.sy) return alert("Please enter a School Year.");
         const semCode = newTermForm.sem === "1st Semester" ? "1" : newTermForm.sem === "2nd Semester" ? "2" : "3";
@@ -43,10 +58,26 @@ export default function Settings() {
 
         if (terms.some(t => t.termID === newID)) return alert("This term already exists.");
 
-        terms.push({ termID: newID, termSY: newTermForm.sy, termSem: newTermForm.sem as "1st Semester" | "2nd Semester" | "Midyear" });
-        pushAudit("CREATED_ACADEMIC_TERM", newID);
-        alert("New academic term added successfully.");
-        setNewTermForm({ sy: "", sem: "1st Semester" });
+        setIsSaving(true);
+        const newTerm: ACADEMIC_TERM = {
+            termID: newID,
+            termSY: newTermForm.sy,
+            termSem: newTermForm.sem as "1st Semester" | "2nd Semester" | "Midyear",
+            isCurrent: false
+        };
+
+        // Push the newly created term to the Supabase database
+        const { error } = await backendAPI.createTerm(newTerm);
+
+        if (error) {
+            alert("Database Error: Could not create term. " + error);
+        } else {
+            setTerms([...terms, newTerm]);
+            pushAudit("CREATED_ACADEMIC_TERM", newID);
+            alert("New academic term added successfully.");
+            setNewTermForm({ sy: "", sem: "1st Semester" });
+        }
+        setIsSaving(false);
     };
 
     const filteredLogs = auditLogs.filter(log => {
@@ -119,13 +150,13 @@ export default function Settings() {
                             <form onSubmit={handleSystemSave} className="mb-8 flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5 transition-colors">
                                 <label className="mb-1.5 block text-sm font-bold text-slate-800 dark:text-slate-200">Active Academic Term</label>
                                 <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Sets the default term context for the Student Evaluator and Reports generation.</p>
-                                <select value={activeTerm} onChange={(e) => setActiveTerm(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2.5 text-sm font-semibold outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">
+                                <select value={activeTerm} onChange={(e) => setActiveTerm(e.target.value)} disabled={isSaving} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2.5 text-sm font-semibold outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-50 transition-colors">
                                     {terms.map(t => (
-                                        <option key={t.termID} value={t.termID}>{t.termSem}, AY {t.termSY}</option>
+                                        <option key={t.termID} value={t.termID}>{t.termSem}, AY {t.termSY} {t.isCurrent ? "(Current)" : ""}</option>
                                     ))}
                                 </select>
                                 <div className="mt-2 text-right">
-                                    <button type="submit" className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 dark:hover:bg-blue-500">Set Active Term</button>
+                                    <button type="submit" disabled={isSaving} className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 dark:hover:bg-blue-500 disabled:opacity-50">Set Active Term</button>
                                 </div>
                             </form>
 
@@ -133,13 +164,13 @@ export default function Settings() {
                                 <label className="mb-1.5 block text-sm font-bold text-blue-800 dark:text-blue-400">Create New Academic Term</label>
                                 <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Initialize a new academic semester for the system. This action is permanent.</p>
                                 <div className="flex gap-4">
-                                    <input required placeholder="School Year (e.g. 2026-2027)" value={newTermForm.sy} onChange={e => setNewTermForm({...newTermForm, sy: e.target.value})} className="w-1/2 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
-                                    <select required value={newTermForm.sem} onChange={e => setNewTermForm({...newTermForm, sem: e.target.value})} className="w-1/2 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">
+                                    <input required placeholder="School Year (e.g. 2026-2027)" value={newTermForm.sy} onChange={e => setNewTermForm({...newTermForm, sy: e.target.value})} disabled={isSaving} className="w-1/2 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-50 transition-colors" />
+                                    <select required value={newTermForm.sem} onChange={e => setNewTermForm({...newTermForm, sem: e.target.value})} disabled={isSaving} className="w-1/2 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-50 transition-colors">
                                         <option>1st Semester</option><option>2nd Semester</option><option>Midyear</option>
                                     </select>
                                 </div>
                                 <div className="mt-2 text-right">
-                                    <button type="submit" className="rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700">Register Term</button>
+                                    <button type="submit" disabled={isSaving} className="rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50">Register Term</button>
                                 </div>
                             </form>
                         </div>

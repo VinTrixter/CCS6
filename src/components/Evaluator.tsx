@@ -428,6 +428,35 @@ export default function Evaluator() {
                                                     <td className="px-5 py-4 font-mono">{ts.semCQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.runningCQPA?.toFixed(2)}</td>
                                                     <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : ts.termAcademicStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{ts.termAcademicStatus}</span></td>
                                                 </tr>
+                                                {isExpanded && (
+                                                    <tr>
+                                                        <td colSpan={4} className="bg-slate-50/50 dark:bg-slate-900/50 p-0 border-b border-slate-100 dark:border-slate-700">
+                                                            <div className="px-10 py-4">
+                                                                <table className="w-full text-xs text-left text-slate-600 dark:text-slate-400">
+                                                                    <thead>
+                                                                    <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500">
+                                                                        <th className="py-2">Course Code</th>
+                                                                        <th className="py-2">Units</th>
+                                                                        <th className="py-2 text-right">Final Grade</th>
+                                                                    </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                    {records.filter(r => r.termID === ts.termID).map(rec => {
+                                                                        const pc = programCourses.find(p => p.programCourseID === rec.programCourseID);
+                                                                        return (
+                                                                            <tr key={rec.recordID} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                                                                <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
+                                                                                <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
+                                                                                <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade ?? rec.gradeRemarks ?? '-'}</td>
+                                                                            </tr>
+                                                                        )
+                                                                    })}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
                                             </React.Fragment>
                                         );
                                     })}
@@ -458,23 +487,30 @@ export default function Evaluator() {
                                             <div key={remark.remarkID} className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm transition-colors">
                                                 <div className="mb-2 flex justify-between">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="rounded bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400">{remark.category}</span>
                                                         <span className="text-xs text-slate-400 dark:text-slate-500">{remark.timestamp.split('T')[0]}</span>
                                                     </div>
                                                     {can('add_remarks') && (
                                                         <div className="flex items-center gap-2">
-                                                            <button onClick={() => { setEditingRemarkID(remark.remarkID); setRemarkForm({ category: remark.category as AdvisingCategory, content: remark.content }); }} className="text-slate-400 dark:text-slate-500 transition hover:text-blue-700 dark:hover:text-blue-400"><I.Edit2 className="h-4 w-4" /></button>
+                                                            <button onClick={() => { setEditingRemarkID(remark.remarkID); setRemarkForm({ category: "General Note", content: remark.content }); }} className="text-slate-400 dark:text-slate-500 transition hover:text-blue-700 dark:hover:text-blue-400"><I.Edit2 className="h-4 w-4" /></button>
                                                             <button onClick={() => handleDeleteRemark(remark.remarkID)} className="text-slate-400 dark:text-slate-500 transition hover:text-coral dark:hover:text-red-400"><I.X className="h-4 w-4" /></button>
                                                         </div>
                                                     )}
                                                 </div>
-                                                <p className="text-sm text-slate-700 dark:text-slate-300">{remark.content}</p>
+                                                <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{remark.content}</p>
                                             </div>
                                         ))}
                                     </div>
                                     {can('add_remarks') && (
                                         <form onSubmit={handleSaveRemark} className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm transition-colors">
-                                            <select value={remarkForm.category} onChange={e => setRemarkForm({...remarkForm, category: e.target.value as AdvisingCategory})} className="mb-3 w-1/3 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500"><option>General Note</option><option>Guidance Referral</option><option>Policy Warning</option><option>Shifting Recommended</option></select>
+                                            {/* FIXED: Hides category dropdown when editing an existing string */}
+                                            {!editingRemarkID && (
+                                                <select value={remarkForm.category} onChange={e => setRemarkForm({...remarkForm, category: e.target.value as AdvisingCategory})} className="mb-3 w-1/3 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500">
+                                                    <option>General Note</option>
+                                                    <option>Guidance Referral</option>
+                                                    <option>Policy Warning</option>
+                                                    <option>Shifting Recommended</option>
+                                                </select>
+                                            )}
                                             <textarea required value={remarkForm.content} onChange={e => setRemarkForm({...remarkForm, content: e.target.value})} placeholder="Enter advising remark here..." className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-3 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500" rows={3}></textarea>
                                             <div className="mt-3 flex items-center gap-3">
                                                 <button type="submit" className="rounded-lg bg-blue-700 dark:bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800 dark:hover:bg-blue-700 transition">{editingRemarkID ? "Update Remark" : "Save Remark"}</button>
