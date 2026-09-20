@@ -70,13 +70,13 @@ export interface ACADEMIC_RECORD {
     termID: string;
     studentID: string;
     userID: string;
-    gradeRemarks?: string;
+    gradeRemarks: string | null; // FIXED: Explicitly accepts null instead of undefined
 }
 
 export interface TERM_STANDING {
     standingID: string;
+    termQPA: number;
     semCQPA: number;
-    runningCQPA?: number;
     termAcademicStatus: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
     isConsecutiveOP: boolean;
     studentID: string;

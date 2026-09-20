@@ -36,13 +36,11 @@ export default function Settings() {
         e.preventDefault();
         setIsSaving(true);
 
-        // Push the active term toggle to the database (Ensures old term = false, new term = true)
         const { error } = await backendAPI.updateActiveTerm(activeTerm);
 
         if (error) {
             alert("Database Error: Could not update active term. " + error);
         } else {
-            // Update local state to reflect the database
             setTerms(terms.map(t => ({ ...t, isCurrent: t.termID === activeTerm })));
             pushAudit("UPDATED_ACTIVE_TERM", activeTerm);
             alert("System environment variables updated successfully.");
@@ -66,7 +64,6 @@ export default function Settings() {
             isCurrent: false
         };
 
-        // Push the newly created term to the Supabase database
         const { error } = await backendAPI.createTerm(newTerm);
 
         if (error) {
@@ -177,13 +174,13 @@ export default function Settings() {
                     )}
 
                     {activeTab === "audit" && can('manage_records') && (
-                        <div>
-                            <div className="mb-4 flex flex-col gap-2">
+                        <div className="flex h-full flex-col">
+                            <div className="mb-4 flex flex-col gap-2 shrink-0">
                                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Security Audit Ledger</h2>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Immutable read-only log of session operations.</p>
                             </div>
 
-                            <div className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 transition-colors">
+                            <div className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 transition-colors shrink-0">
                                 <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Filter Ledger</div>
                                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                                     <input type="date" value={auditFilters.start} onChange={e => setAuditFilters({...auditFilters, start: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" title="Start Date" />
@@ -197,28 +194,31 @@ export default function Settings() {
                                 </div>
                             </div>
 
-                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors">
-                                <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-                                    <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-xs uppercase text-slate-500 dark:text-slate-400">
-                                    <tr>
-                                        <th className="px-5 py-3 font-semibold">Timestamp</th>
-                                        <th className="px-5 py-3 font-semibold">User ID</th>
-                                        <th className="px-5 py-3 font-semibold">Action Executed</th>
-                                        <th className="px-5 py-3 font-semibold text-right">Target Document</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                    {filteredLogs.map(log => (
-                                        <tr key={log.logID} className="transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                            <td className="px-5 py-3 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
-                                            <td className="px-5 py-3 font-mono text-xs font-bold text-slate-800 dark:text-slate-200">{log.userID}</td>
-                                            <td className="px-5 py-3"><span className="rounded bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700 dark:text-blue-400">{log.action.replace(/_/g, ' ')}</span></td>
-                                            <td className="px-5 py-3 text-right font-mono text-xs">{log.target}</td>
+                            {/* FIXED: Audit table is now strictly limited in height and supports vertical scrolling */}
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors flex flex-col overflow-hidden">
+                                <div className="max-h-[400px] overflow-y-auto">
+                                    <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+                                        <thead className="sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-xs uppercase text-slate-500 dark:text-slate-400 shadow-sm">
+                                        <tr>
+                                            <th className="px-5 py-3 font-semibold">Timestamp</th>
+                                            <th className="px-5 py-3 font-semibold">User ID</th>
+                                            <th className="px-5 py-3 font-semibold">Action Executed</th>
+                                            <th className="px-5 py-3 font-semibold text-right">Target Document</th>
                                         </tr>
-                                    ))}
-                                    {filteredLogs.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">No events match the current filters.</td></tr>}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        {filteredLogs.map(log => (
+                                            <tr key={log.logID} className="transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                <td className="px-5 py-3 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
+                                                <td className="px-5 py-3 font-mono text-xs font-bold text-slate-800 dark:text-slate-200">{log.userID}</td>
+                                                <td className="px-5 py-3"><span className="rounded bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700 dark:text-blue-400">{log.action.replace(/_/g, ' ')}</span></td>
+                                                <td className="px-5 py-3 text-right font-mono text-xs">{log.target}</td>
+                                            </tr>
+                                        ))}
+                                        {filteredLogs.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">No events match the current filters.</td></tr>}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     )}
