@@ -99,8 +99,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                 setRecords(data.records);
                 setTerms(data.terms);
                 setCoursePrerequisites(data.coursePrerequisites);
-
-                // FIXED: Injects Audit Log data seamlessly
                 setAuditLogs(data.auditLogs || []);
 
                 const currentTerm = data.terms.find(t => t.isCurrent);
@@ -125,7 +123,8 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     const pushAudit = (action: string, target: string) => {
         if (!activeUser) return;
-        const logID = `LOG-${Date.now()}`;
+        // FIXED: Generates an exact 10-character ID to satisfy varchar(10) database limits
+        const logID = `LG-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
         const newLog: AUDIT_LOG = { logID, timestamp: new Date().toISOString(), userID: activeUser.userID, action, target };
         setAuditLogs(prev => [newLog, ...prev]);
         void backendAPI.pushAuditLog(logID, activeUser.userID, action, target);

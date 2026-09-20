@@ -90,9 +90,10 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
+        // INJECTED: `terms` added to parameter list
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
             courseCode, "", undefined, selectedStudent, activeTerm, records,
-            programCourses, courses, activeProgram, standings, activeUser.userID
+            programCourses, courses, activeProgram, standings, activeUser.userID, terms
         );
 
         if (error) return alert(error);
@@ -107,9 +108,10 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
+        // INJECTED: `terms` added to parameter list
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
             code, val, recordID, selectedStudent, activeTerm, records,
-            programCourses, courses, activeProgram, standings, activeUser.userID
+            programCourses, courses, activeProgram, standings, activeUser.userID, terms
         );
 
         if (error) return alert(error);
@@ -123,9 +125,10 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
+        // INJECTED: `terms` added to parameter list
         const { recordsData, standingsData, error } = await backendAPI.deleteGradeRow(
             recordID, records, selectedStudent.studentID, activeTerm,
-            programCourses, courses, activeProgram, standings
+            programCourses, courses, activeProgram, standings, terms
         );
 
         if (error) return alert(error);
@@ -502,7 +505,6 @@ export default function Evaluator() {
                                     </div>
                                     {can('add_remarks') && (
                                         <form onSubmit={handleSaveRemark} className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm transition-colors">
-                                            {/* FIXED: Hides category dropdown when editing an existing string */}
                                             {!editingRemarkID && (
                                                 <select value={remarkForm.category} onChange={e => setRemarkForm({...remarkForm, category: e.target.value as AdvisingCategory})} className="mb-3 w-1/3 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500">
                                                     <option>General Note</option>

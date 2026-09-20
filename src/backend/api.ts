@@ -17,12 +17,23 @@ export interface EnrichedGradeRow {
     recordID?: string;
 }
 
+// FIXED: Native ID truncator ensures no ID exceeds database varchar(10) limits.
+const generateID = (prefix: string) => {
+    return `${prefix}${Math.random().toString(36).substring(2, 9).toUpperCase()}`.substring(0, 10);
+};
+
+const compareTerms = (termA: ACADEMIC_TERM, termB: ACADEMIC_TERM) => {
+    if (termA.termSY !== termB.termSY) return termA.termSY.localeCompare(termB.termSY);
+    const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+    return semWeights[termA.termSem] - semWeights[termB.termSem];
+};
+
 const evaluateAndApplyStanding = (
     studentID: string, activeTerm: string, updatedRecords: ACADEMIC_RECORD[],
     programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-    currentStandings: TERM_STANDING[]
+    currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
 ) => {
-    const newStanding = AcademicEngine.evaluateAcademicStanding(studentID, activeTerm, updatedRecords, programCourses, courses, program, currentStandings);
+    const newStanding = AcademicEngine.evaluateAcademicStanding(studentID, activeTerm, updatedRecords, programCourses, courses, program, currentStandings, terms);
 
     const updatedStandingsArray = [...currentStandings];
     const standingIndex = updatedStandingsArray.findIndex(ts => ts.standingID === newStanding.standingID);
@@ -37,10 +48,18 @@ const AcademicEngine = {
     evaluateAcademicStanding(
         studentID: string, activeTerm: string, studentRecords: ACADEMIC_RECORD[],
         programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-        currentStandings: TERM_STANDING[]
+        currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
     ): TERM_STANDING {
+        const activeTermDetails = terms.find(t => t.termID === activeTerm);
+
         const termRecords = studentRecords.filter(r => r.studentID === studentID && r.termID === activeTerm);
-        const historicalRecords = studentRecords.filter(r => r.studentID === studentID && r.termID <= activeTerm);
+
+        // FIXED: CQPA algorithm now properly includes ALL records up to and including the current term
+        const historicalRecords = studentRecords.filter(r => {
+            if (r.studentID !== studentID) return false;
+            const rTerm = terms.find(t => t.termID === r.termID);
+            return rTerm && activeTermDetails && compareTerms(rTerm, activeTermDetails) <= 0;
+        });
 
         const calculateQPA = (recordsToEvaluate: ACADEMIC_RECORD[]) => {
             let totalPoints = 0;
@@ -54,35 +73,59 @@ const AcademicEngine = {
                     totalUnits += units;
                 }
             });
-            return totalUnits > 0 ? (totalPoints / totalUnits) : 0.0;
+            return totalUnits > 0 ? (totalPoints / totalUnits) : null;
         };
 
         const semCQPA = calculateQPA(termRecords);
-        const runningCQPA = calculateQPA(historicalRecords);
+        const runningCQPA = calculateQPA(historicalRecords) || 0.0;
         const threshold = program.passingGradeThreshold || 2.0;
 
-        let status: "Regular" | "On-Probation" | "Advised to Shift" = "Regular";
+        const hasBlankRecords = termRecords.some(r => r.finalGrade === null && !r.gradeRemarks);
+        const isTermIncomplete = termRecords.length === 0 || hasBlankRecords;
+
+        const pastStandings = currentStandings
+            .filter(ts => {
+                if (ts.studentID !== studentID || ts.termID === activeTerm) return false;
+                const tsTerm = terms.find(t => t.termID === ts.termID);
+                return tsTerm && activeTermDetails && compareTerms(tsTerm, activeTermDetails) < 0;
+            })
+            .sort((a, b) => {
+                const termA = terms.find(t => t.termID === a.termID);
+                const termB = terms.find(t => t.termID === b.termID);
+                if (!termA || !termB) return 0;
+                return compareTerms(termB, termA);
+            });
+
+        const pastOPCount = pastStandings.filter(ts =>
+            ts.termAcademicStatus === "On-Probation" || ts.termAcademicStatus === "Advised to Shift"
+        ).length;
+
+        let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded" = "Regular";
         let isConsecutiveOP = false;
 
-        if (semCQPA > 0 && semCQPA < threshold) {
-            status = "On-Probation";
-
-            // FIXED: Isolates the explicit prior semester by sorting chronologically descending
-            const previousStandings = currentStandings
-                .filter(ts => ts.studentID === studentID && ts.termID < activeTerm)
-                .sort((a, b) => b.termID.localeCompare(a.termID));
-
-            if (previousStandings.length > 0 && previousStandings[0].termAcademicStatus === "On-Probation") {
-                isConsecutiveOP = true;
-                status = "Advised to Shift";
+        if (pastOPCount >= 2) {
+            status = "Advised to Shift";
+            isConsecutiveOP = true;
+        } else if (isTermIncomplete) {
+            status = "Unencoded";
+        } else {
+            if (semCQPA !== null && semCQPA < threshold) {
+                if (pastOPCount >= 1) {
+                    status = "Advised to Shift";
+                    isConsecutiveOP = true;
+                } else {
+                    status = "On-Probation";
+                }
+            } else {
+                status = "Regular";
             }
         }
 
         const existingStanding = currentStandings.find(ts => ts.studentID === studentID && ts.termID === activeTerm);
-        const standingID = existingStanding ? existingStanding.standingID : `STD-${Date.now()}`;
+        const standingID = existingStanding ? existingStanding.standingID : generateID('ST-');
 
         return {
-            standingID, semCQPA, runningCQPA, termAcademicStatus: status,
+            standingID, semCQPA: semCQPA || 0.0, runningCQPA, termAcademicStatus: status,
             isConsecutiveOP, studentID, termID: activeTerm
         };
     }
@@ -104,7 +147,7 @@ export const backendAPI = {
                 supabase.from('ACADEMIC_RECORD').select('*'),
                 supabase.from('ACADEMIC_TERM').select('*'),
                 supabase.from('COURSE_PREREQUISITE').select('*'),
-                supabase.from('AUDIT_LOG').select('*').order('timestamp', { ascending: false }) // FIXED: Added Fetch Query
+                supabase.from('AUDIT_LOG').select('*').order('timestamp', { ascending: false })
             ]);
 
             if (studentsRes.error) return { data: null, error: studentsRes.error.message };
@@ -276,7 +319,7 @@ export const backendAPI = {
         for (const pc of curriculum) {
             if (!existingRecords.some(r => r.programCourseID === pc.programCourseID)) {
                 const newRec: ACADEMIC_RECORD = {
-                    recordID: `REC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                    recordID: generateID('RC-'),
                     finalGrade: null,
                     isFailed: false,
                     dateEncoded: new Date().toISOString().split('T')[0],
@@ -298,7 +341,7 @@ export const backendAPI = {
     async upsertGrade(
         courseCode: string, val: string, recordID: string | undefined, student: EnrichedStudent, activeTerm: string,
         currentRecords: ACADEMIC_RECORD[], programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-        currentStandings: TERM_STANDING[], userID: string
+        currentStandings: TERM_STANDING[], userID: string, terms: ACADEMIC_TERM[]
     ) {
         let finalGrade: number | null = null;
         let isFailed = false;
@@ -328,7 +371,7 @@ export const backendAPI = {
             const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
             if (!pc) return { recordsData: null, standingsData: null, error: "Course not found in curriculum." };
             updatedRecord = {
-                recordID: `REC-${Date.now()}`, finalGrade, isFailed, gradeRemarks, dateEncoded: new Date().toISOString().split('T')[0],
+                recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks, dateEncoded: new Date().toISOString().split('T')[0],
                 programCourseID: pc.programCourseID, termID: activeTerm, studentID: student.studentID, userID
             };
             const { error } = await supabase.from('ACADEMIC_RECORD').insert([updatedRecord]);
@@ -336,7 +379,7 @@ export const backendAPI = {
             updatedRecordsArray.push(updatedRecord);
         }
 
-        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(student.studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings);
+        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(student.studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
 
         const dbStanding = {
             ...newStanding,
@@ -350,14 +393,14 @@ export const backendAPI = {
 
     async deleteGradeRow(
         recordID: string, currentRecords: ACADEMIC_RECORD[], studentID: string, activeTerm: string,
-        programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM, currentStandings: TERM_STANDING[]
+        programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM, currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
     ) {
         const { error } = await supabase.from('ACADEMIC_RECORD').delete().eq('recordID', recordID);
         if (error) return { recordsData: null, standingsData: null, error: error.message };
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
 
-        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings);
+        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
 
         const dbStanding = {
             ...newStanding,
@@ -383,7 +426,7 @@ export const backendAPI = {
         if (studentError) return { data: null, error: studentError.message };
 
         const progLink = {
-            studProgID: `SP-${Date.now()}`,
+            studProgID: generateID('SP-'),
             programCode: newStudent.programCode,
             studentID: newStudent.studentID
         };
@@ -410,7 +453,7 @@ export const backendAPI = {
 
         const existingStudent = currentStudents.find(s => s.studentID === updatedData.studentID);
         if (existingStudent && existingStudent.programCode !== updatedData.programCode) {
-            const progLink = { studProgID: `SP-${Date.now()}`, programCode: updatedData.programCode, studentID: updatedData.studentID };
+            const progLink = { studProgID: generateID('SP-'), programCode: updatedData.programCode, studentID: updatedData.studentID };
             await supabase.from('STUDENT_PROGRAM').insert([progLink]);
         }
 
@@ -457,9 +500,8 @@ export const backendAPI = {
             const index = updatedRemarks.findIndex(r => r.remarkID === remarkID);
             updatedRemarks[index] = updatedRemark;
         } else {
-            // FIXED: Dynamically injects the category into the payload directly
             const finalContent = `[${remarkForm.category}] ${remarkForm.content}`;
-            updatedRemark = { remarkID: `REM-${Date.now()}`, content: finalContent, timestamp: new Date().toISOString(), userID, standingID: targetStanding.standingID };
+            updatedRemark = { remarkID: generateID('RM-'), content: finalContent, timestamp: new Date().toISOString(), userID, standingID: targetStanding.standingID };
             const { error } = await supabase.from('ADVISING_REMARK').insert([updatedRemark]);
             if (error) return { data: null, error: error.message };
             updatedRemarks.push(updatedRemark);
@@ -493,7 +535,7 @@ export const backendAPI = {
         const baseCourse: COURSE = { courseCode: payload.courseCode, courseTitle: payload.title, courseUnits: Number(payload.units) };
 
         const progCourseDB = {
-            programCourseID: editingCourseCode ? programCourses.find(pc => pc.courseCode === editingCourseCode && pc.programCode === program.programCode)!.programCourseID : `PC-${Date.now()}`,
+            programCourseID: editingCourseCode ? programCourses.find(pc => pc.courseCode === editingCourseCode && pc.programCode === program.programCode)!.programCourseID : generateID('PC-'),
             programCode: program.programCode,
             courseCode: payload.courseCode,
             majorMinorClassif: payload.classification as "Major" | "Minor",
@@ -527,7 +569,6 @@ export const backendAPI = {
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
         students: EnrichedStudent[], activeStandings: TERM_STANDING[]
     ) {
-        // FIXED: Maps over all active students instead of exclusively students with grades
         const data = students.map(student => {
             const ts = activeStandings.find(t => t.studentID === student.studentID);
             return {
