@@ -1,10 +1,11 @@
+// src/store/types.ts
 export interface COMPASS_USER {
     userID: string;
     userName: string;
     userFirstName: string;
     userMiddleName?: string;
     userLastName: string;
-    userType: "Faculty" | "Deans Office_Staff";
+    userType: "Faculty" | "Deans_Office_Staff";
     userPassword?: string;
 }
 
@@ -28,6 +29,7 @@ export interface ACADEMIC_TERM {
     termID: string;
     termSY: string;
     termSem: "1st Semester" | "2nd Semester" | "Midyear";
+    isCurrent: boolean;
 }
 
 export interface DEGREE_PROGRAM {
@@ -75,7 +77,7 @@ export interface TERM_STANDING {
     standingID: string;
     semCQPA: number;
     runningCQPA?: number;
-    termAcademicStatus: "Regular" | "On-Probation" | "Advised to Shift";
+    termAcademicStatus: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
     isConsecutiveOP: boolean;
     studentID: string;
     termID: string;
@@ -87,7 +89,6 @@ export interface ADVISING_REMARK {
     timestamp: string;
     userID: string;
     standingID: string;
-    category?: string;
 }
 
 export interface AUDIT_LOG {

@@ -2,14 +2,15 @@
 import React, { useState } from "react";
 import { supabase } from '../backend/supabaseClient';
 import { useStore } from '../store/store';
+
+// @ts-ignore: Bypassing missing types package for local encryption
 import bcrypt from 'bcryptjs';
 import * as I from "./icons";
 
 export default function Login() {
     const { setIsAuthenticated, setActiveUser, pushAudit } = useStore();
 
-    // REVISED: Changed state to track userID instead of email
-    const [userIDInput, setUserIDInput] = useState("");
+    const [loginInput, setLoginInput] = useState("");
     const [passwordInput, setPasswordInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
@@ -19,21 +20,22 @@ export default function Login() {
         setIsLoading(true);
         setErrorMessage("");
 
-        // 1. Fetch the user profile directly from the COMPASS_USER table
+        const cleanInput = loginInput.trim();
+
+        // 1. Fetch user by checking BOTH userID and userName columns
         const { data: userData, error: userError } = await supabase
             .from('COMPASS_USER')
             .select('*')
-            .eq('userID', userIDInput.trim())
+            .or(`userID.eq.${cleanInput},userName.eq.${cleanInput}`)
             .single();
 
-        // 2. Handle missing user or network error
         if (userError || !userData) {
-            setErrorMessage("User ID not found in the system.");
+            setErrorMessage("Credentials not found in the system.");
             setIsLoading(false);
             return;
         }
 
-        // 3. Compare the typed password against the bcrypt hash in the database
+        // 2. Compare the typed password against the bcrypt hash in the database
         const isPasswordMatch = bcrypt.compareSync(passwordInput, userData.userPassword);
 
         if (!isPasswordMatch) {
@@ -42,7 +44,7 @@ export default function Login() {
             return;
         }
 
-        // 4. Complete the local authentication
+        // 3. Establish Local Session
         setActiveUser(userData);
         setIsAuthenticated(true);
         pushAudit("USER_LOGIN", userData.userID);
@@ -64,11 +66,10 @@ export default function Login() {
                         {errorMessage && <div className="p-3 text-xs font-bold text-red-600 bg-red-50 rounded-md border border-red-200">{errorMessage}</div>}
 
                         <div>
-                            {/* REVISED: UI updated to ask for User ID */}
-                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">User ID</label>
+                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">User ID or Username</label>
                             <div className="relative">
                                 <I.UserSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                                <input required type="text" placeholder="e.g. USR-001" value={userIDInput} onChange={e => setUserIDInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
+                                <input required type="text" placeholder="e.g. USR-001 or rgomez" value={loginInput} onChange={e => setLoginInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
                             </div>
                         </div>
 
