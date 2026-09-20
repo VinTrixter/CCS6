@@ -83,7 +83,6 @@ export default function Reports() {
                     <div className="text-right text-sm font-medium text-slate-700">
                         <div>{activeTermDetails?.termSem}, AY {activeTermDetails?.termSY}</div>
                         <div>Date Printed: {printDate}</div>
-                        {/* FIXED: Safe chaining for activeUser */}
                         <div className="text-xs text-slate-500">Prepared by: {activeUser?.userFirstName} {activeUser?.userLastName}</div>
                     </div>
                 </div>
@@ -95,7 +94,7 @@ export default function Reports() {
                     <tr>
                         <th className="px-5 py-4 font-bold">Student</th>
                         <th className="px-5 py-4 text-center font-bold">Program & Yr</th>
-                        <th className="px-5 py-4 text-center font-bold">Term QPA</th>
+                        <th className="px-5 py-4 text-center font-bold">QPA</th>
                         <th className="px-5 py-4 text-center font-bold">CQPA</th>
                         <th className="px-5 py-4 text-right font-bold">Academic Status</th>
                     </tr>
@@ -116,8 +115,8 @@ export default function Reports() {
                                 <div className="font-mono text-xs text-slate-500 dark:text-slate-400">{record.student?.studentID}</div>
                             </td>
                             <td className="px-5 py-3 text-center"><div className="font-semibold text-slate-700 dark:text-slate-300 print:text-black">{record.student?.programCode}</div><div className="text-xs text-slate-500 dark:text-slate-400">Year {record.student?.yearLevel}</div></td>
-                            <td className="px-5 py-3 text-center font-mono">{record.semCQPA.toFixed(2)}</td>
-                            <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 print:text-black">{record.runningCQPA?.toFixed(2)}</td>
+                            <td className="px-5 py-3 text-center font-mono">{record.termQPA.toFixed(2)}</td>
+                            <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 print:text-black">{record.semCQPA.toFixed(2)}</td>
                             <td className="px-5 py-3 text-right">
                                 <span className={`print:hidden inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${record.termAcademicStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : record.termAcademicStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{record.termAcademicStatus}</span>
                                 <span className="hidden text-xs font-bold uppercase print:inline">{record.termAcademicStatus}</span>

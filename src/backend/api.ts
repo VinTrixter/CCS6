@@ -17,7 +17,6 @@ export interface EnrichedGradeRow {
     recordID?: string;
 }
 
-// FIXED: Native ID truncator ensures no ID exceeds database varchar(10) limits.
 const generateID = (prefix: string) => {
     return `${prefix}${Math.random().toString(36).substring(2, 9).toUpperCase()}`.substring(0, 10);
 };
@@ -54,7 +53,6 @@ const AcademicEngine = {
 
         const termRecords = studentRecords.filter(r => r.studentID === studentID && r.termID === activeTerm);
 
-        // FIXED: CQPA algorithm now properly includes ALL records up to and including the current term
         const historicalRecords = studentRecords.filter(r => {
             if (r.studentID !== studentID) return false;
             const rTerm = terms.find(t => t.termID === r.termID);
@@ -66,7 +64,7 @@ const AcademicEngine = {
             let totalUnits = 0;
             recordsToEvaluate.forEach(record => {
                 const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
-                if (pc && pc.isCQPAIncluded && record.finalGrade !== null && !record.gradeRemarks) {
+                if (pc && pc.isCQPAIncluded && record.finalGrade !== null) {
                     const baseCourse = courses.find(c => c.courseCode === pc.courseCode);
                     const units = baseCourse ? baseCourse.courseUnits : 3;
                     totalPoints += (record.finalGrade * units);
@@ -76,8 +74,8 @@ const AcademicEngine = {
             return totalUnits > 0 ? (totalPoints / totalUnits) : null;
         };
 
-        const semCQPA = calculateQPA(termRecords);
-        const runningCQPA = calculateQPA(historicalRecords) || 0.0;
+        const termQPA = calculateQPA(termRecords);
+        const semCQPA = calculateQPA(historicalRecords) || 0.0;
         const threshold = program.passingGradeThreshold || 2.0;
 
         const hasBlankRecords = termRecords.some(r => r.finalGrade === null && !r.gradeRemarks);
@@ -100,7 +98,8 @@ const AcademicEngine = {
             ts.termAcademicStatus === "On-Probation" || ts.termAcademicStatus === "Advised to Shift"
         ).length;
 
-        let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded" = "Regular";
+        // FIXED: Removed useless initialization to appease ESLint
+        let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
         let isConsecutiveOP = false;
 
         if (pastOPCount >= 2) {
@@ -109,7 +108,7 @@ const AcademicEngine = {
         } else if (isTermIncomplete) {
             status = "Unencoded";
         } else {
-            if (semCQPA !== null && semCQPA < threshold) {
+            if (termQPA !== null && termQPA < threshold) {
                 if (pastOPCount >= 1) {
                     status = "Advised to Shift";
                     isConsecutiveOP = true;
@@ -125,7 +124,7 @@ const AcademicEngine = {
         const standingID = existingStanding ? existingStanding.standingID : generateID('ST-');
 
         return {
-            standingID, semCQPA: semCQPA || 0.0, runningCQPA, termAcademicStatus: status,
+            standingID, termQPA: termQPA || 0.0, semCQPA, termAcademicStatus: status,
             isConsecutiveOP, studentID, termID: activeTerm
         };
     }
@@ -171,7 +170,10 @@ export const backendAPI = {
 
             const mappedStandings = ((standingsRes.data as Array<TERM_STANDING & { termAcademicStatus: string }>) || []).map((ts) => ({
                 ...ts,
-                termAcademicStatus: ts.termAcademicStatus === 'Advised-to-Shift' ? 'Advised to Shift' : ts.termAcademicStatus
+                termQPA: ts.termQPA || 0.0,
+                semCQPA: ts.semCQPA || 0.0,
+                // FIXED: Cast as string to appease strict TS union overlap checking
+                termAcademicStatus: (ts.termAcademicStatus as string) === 'Advised-to-Shift' ? 'Advised to Shift' : ts.termAcademicStatus
             }));
 
             return {
@@ -258,7 +260,7 @@ export const backendAPI = {
                 courseTitle: baseCourse.courseTitle,
                 courseUnits: baseCourse.courseUnits,
                 isMissingPrereq,
-                finalGrade: existingRecord ? (existingRecord.gradeRemarks || (existingRecord.finalGrade?.toString() || "")) : "",
+                finalGrade: existingRecord ? (existingRecord.finalGrade !== null ? (existingRecord.finalGrade === 0 ? "F" : existingRecord.finalGrade.toString()) : (existingRecord.gradeRemarks || "")) : "",
                 isBlank: !existingRecord || (existingRecord.finalGrade === null && !existingRecord.gradeRemarks),
                 recordID: existingRecord?.recordID
             });
@@ -273,7 +275,7 @@ export const backendAPI = {
                     courseTitle: baseCourse?.courseTitle || "Unknown",
                     courseUnits: baseCourse?.courseUnits || 0,
                     isMissingPrereq: false,
-                    finalGrade: record.gradeRemarks || (record.finalGrade?.toString() || ""),
+                    finalGrade: record.finalGrade !== null ? (record.finalGrade === 0 ? "F" : record.finalGrade.toString()) : (record.gradeRemarks || ""),
                     isBlank: record.finalGrade === null && !record.gradeRemarks,
                     recordID: record.recordID
                 });
@@ -326,7 +328,8 @@ export const backendAPI = {
                     programCourseID: pc.programCourseID,
                     termID: activeTerm,
                     studentID: student.studentID,
-                    userID
+                    userID,
+                    gradeRemarks: null
                 };
                 newRecords.push(newRec);
             }
@@ -344,18 +347,27 @@ export const backendAPI = {
         currentStandings: TERM_STANDING[], userID: string, terms: ACADEMIC_TERM[]
     ) {
         let finalGrade: number | null = null;
+        let gradeRemarks: string | null = null;
         let isFailed = false;
-        let gradeRemarks: string | undefined = undefined;
+
         const upperVal = val.trim().toUpperCase();
 
-        if (["INC", "NG", "W", "D", "F"].includes(upperVal)) {
+        if (upperVal === "") {
+            finalGrade = null;
+            gradeRemarks = null;
+        } else if (upperVal === "F") {
+            finalGrade = 0.0;
+            isFailed = true;
+        } else if (["INC", "NG", "W", "D"].includes(upperVal)) {
             gradeRemarks = upperVal;
-            if (["F", "NG", "D"].includes(upperVal)) isFailed = true;
-            if (upperVal === "F") finalGrade = 0.0;
-        } else if (val.trim() !== "") {
-            finalGrade = Number(val);
-            if (isNaN(finalGrade)) return { recordsData: null, standingsData: null, error: "Invalid grade input." };
-            if (finalGrade === 0.0 || finalGrade > 3.0) isFailed = true;
+            if (["NG", "D"].includes(upperVal)) isFailed = true;
+        } else {
+            const parsedGrade = Number(upperVal);
+            if (isNaN(parsedGrade) || parsedGrade < 0.0 || parsedGrade > 4.0) {
+                return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a valid numerical grade between 0.0 and 4.0, or a valid remark (INC, NG, W, D, F)." };
+            }
+            finalGrade = parsedGrade;
+            if (finalGrade === 0.0) isFailed = true;
         }
 
         let updatedRecord: ACADEMIC_RECORD;
@@ -374,16 +386,17 @@ export const backendAPI = {
                 recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks, dateEncoded: new Date().toISOString().split('T')[0],
                 programCourseID: pc.programCourseID, termID: activeTerm, studentID: student.studentID, userID
             };
-            const { error } = await supabase.from('ACADEMIC_RECORD').insert([updatedRecord]);
+            const { error } = await supabase.from('ACADEMIC_RECORD').insert([{ ...updatedRecord }]);
             if (error) return { recordsData: null, standingsData: null, error: error.message };
             updatedRecordsArray.push(updatedRecord);
         }
 
         const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(student.studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
 
+        // FIXED: Cast as string to appease TS
         const dbStanding = {
             ...newStanding,
-            termAcademicStatus: newStanding.termAcademicStatus === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
+            termAcademicStatus: (newStanding.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
         };
         const { error: standError } = await supabase.from('TERM_STANDING').upsert([dbStanding], { onConflict: 'standingID' });
         if (standError) return { recordsData: null, standingsData: null, error: standError.message };
@@ -402,9 +415,10 @@ export const backendAPI = {
 
         const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
 
+        // FIXED: Cast as string to appease TS
         const dbStanding = {
             ...newStanding,
-            termAcademicStatus: newStanding.termAcademicStatus === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
+            termAcademicStatus: (newStanding.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
         };
         await supabase.from('TERM_STANDING').upsert([dbStanding], { onConflict: 'standingID' });
 
@@ -573,8 +587,8 @@ export const backendAPI = {
             const ts = activeStandings.find(t => t.studentID === student.studentID);
             return {
                 standingID: ts?.standingID || `TEMP-${student.studentID}`,
+                termQPA: ts?.termQPA || 0,
                 semCQPA: ts?.semCQPA || 0,
-                runningCQPA: ts?.runningCQPA || 0,
                 termAcademicStatus: ts?.termAcademicStatus || "Unencoded",
                 isConsecutiveOP: ts?.isConsecutiveOP || false,
                 studentID: student.studentID,

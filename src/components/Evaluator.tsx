@@ -9,6 +9,35 @@ import * as I from "./icons";
 type Tab = "grades" | "history" | "progress" | "remarks";
 type AdvisingCategory = "General Note" | "Guidance Referral" | "Policy Warning" | "Shifting Recommended";
 
+const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, onSave: (val: string) => void, disabled: boolean }) => {
+    const [val, setVal] = useState(initialValue);
+
+    useEffect(() => {
+        setVal(initialValue);
+    }, [initialValue]);
+
+    const handleBlur = () => {
+        if (val !== initialValue) onSave(val);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+    };
+
+    return (
+        <input
+            type="text"
+            disabled={disabled}
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="-"
+            className="w-20 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none transition focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60"
+        />
+    );
+};
+
 export default function Evaluator() {
     const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms } = useStore();
 
@@ -90,7 +119,6 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
-        // INJECTED: `terms` added to parameter list
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
             courseCode, "", undefined, selectedStudent, activeTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms
@@ -108,7 +136,6 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
-        // INJECTED: `terms` added to parameter list
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
             code, val, recordID, selectedStudent, activeTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms
@@ -125,7 +152,6 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
-        // INJECTED: `terms` added to parameter list
         const { recordsData, standingsData, error } = await backendAPI.deleteGradeRow(
             recordID, records, selectedStudent.studentID, activeTerm,
             programCourses, courses, activeProgram, standings, terms
@@ -311,8 +337,8 @@ export default function Evaluator() {
                                             </div>
                                         ) : (
                                             <div className="mt-5 grid grid-cols-3 gap-3 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 text-sm transition-colors">
-                                                <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Term QPA</div><div className="font-mono text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.semCQPA?.toFixed(2) || "0.00"}</div></div>
-                                                <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">CQPA</div><div className="font-mono text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.runningCQPA?.toFixed(2) || "0.00"}</div></div>
+                                                <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">QPA</div><div className="font-mono text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.termQPA?.toFixed(2) || "0.00"}</div></div>
+                                                <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">CQPA</div><div className="font-mono text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.semCQPA?.toFixed(2) || "0.00"}</div></div>
                                                 <div>
                                                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Account</div>
                                                     <select
@@ -404,7 +430,13 @@ export default function Evaluator() {
                                                     <td className="px-5 py-4"><div className="font-bold text-slate-800 dark:text-slate-200">{row.courseCode}</div><div className="text-xs text-slate-500 dark:text-slate-400">{row.courseTitle}</div></td>
                                                     <td className="px-5 py-4 text-center font-mono">{row.courseUnits}</td>
                                                     <td className="px-5 py-4 text-center">{row.isMissingPrereq ? (<span className="inline-flex items-center gap-1 rounded border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-400"><I.Warning className="h-3 w-3" /> PREREQ MISSING</span>) : (<span className="text-[10px] font-bold text-blue-700 dark:text-blue-400">OK</span>)}</td>
-                                                    <td className="px-5 py-4"><input type="text" disabled={!can('encode_grades')} value={row.finalGrade} onChange={(e) => handleGradeChange(row.courseCode, e.target.value, row.recordID)} placeholder="-" className="w-20 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none transition focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60" /></td>
+                                                    <td className="px-5 py-4">
+                                                        <GradeInput
+                                                            initialValue={row.finalGrade}
+                                                            disabled={!can('encode_grades')}
+                                                            onSave={(val) => handleGradeChange(row.courseCode, val, row.recordID)}
+                                                        />
+                                                    </td>
                                                     <td className="px-5 py-4 text-right whitespace-nowrap w-24 sticky right-0 bg-white dark:bg-slate-800 shadow-[-5px_0_15px_-3px_rgba(0,0,0,0.05)] dark:shadow-black/20">
                                                         {can('encode_grades') && row.recordID && row.isBlank && (<button onClick={() => handleDeleteRow(row.courseCode, row.recordID!)} className="rounded p-1 text-slate-400 dark:text-slate-500 transition hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-coral dark:hover:text-red-400"><I.X className="h-4 w-4" /></button>)}
                                                     </td>
@@ -418,7 +450,7 @@ export default function Evaluator() {
                             {activeTab === "history" && (
                                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                                     <thead className="sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-xs uppercase text-slate-400 dark:text-slate-500">
-                                    <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">Semestral QPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
+                                    <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">QPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                                     {historyStandings.map(ts => {
@@ -428,7 +460,7 @@ export default function Evaluator() {
                                             <React.Fragment key={ts.standingID}>
                                                 <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.termID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                     <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800 dark:text-slate-200">{term?.termSem}</div><div className="text-xs text-slate-500 dark:text-slate-400">AY {term?.termSY}</div></div></td>
-                                                    <td className="px-5 py-4 font-mono">{ts.semCQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.runningCQPA?.toFixed(2)}</td>
+                                                    <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.semCQPA.toFixed(2)}</td>
                                                     <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : ts.termAcademicStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{ts.termAcademicStatus}</span></td>
                                                 </tr>
                                                 {isExpanded && (
@@ -450,7 +482,8 @@ export default function Evaluator() {
                                                                             <tr key={rec.recordID} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
                                                                                 <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
                                                                                 <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
-                                                                                <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade ?? rec.gradeRemarks ?? '-'}</td>
+                                                                                {/* Maps null correctly to display the remark instead */}
+                                                                                <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade) : (rec.gradeRemarks || '-')}</td>
                                                                             </tr>
                                                                         )
                                                                     })}
