@@ -1,7 +1,8 @@
 // src/components/Shell.tsx
-import { useState } from "react";
+import React, { useState } from "react";
 import * as I from "./icons";
 import { useStore, type View } from "../store/store";
+import { backendAPI } from "../backend/api";
 
 const navItems: { id: View; label: string; icon: React.ElementType }[] = [
     { id: "dashboard", label: "Dashboard", icon: I.Grid },
@@ -15,7 +16,7 @@ export function Header() {
     const [bellOpen, setBellOpen] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
 
-    const { activeUser, activeTerm, setIsAuthenticated, pushAudit, standings, setActiveView, setPendingSettingsTab, setHighlightReviewTable, terms } = useStore();
+    const { activeUser, activeTerm, setIsAuthenticated, pushAudit, standings, remarks, setActiveView, setPendingSettingsTab, setHighlightReviewTable, terms } = useStore();
     const termDetails = terms.find(t => t.termID === activeTerm);
 
     const initials = activeUser ? `${activeUser.userFirstName[0] || ""}${activeUser.userLastName[0] || ""}`.toUpperCase() : "??";
@@ -37,10 +38,9 @@ export function Header() {
         setBellOpen(false);
     };
 
-    const flaggedCount = standings.filter(ts =>
-        ts.termID === activeTerm &&
-        (ts.termAcademicStatus === 'Advised to Shift' || ts.termAcademicStatus === 'On-Probation')
-    ).length;
+    // FIXED: Now utilizes shared centralized logic to perfectly map the bell count
+    const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser);
+    const flaggedCount = manualReviewList.length;
     const hasUnread = flaggedCount > 0;
 
     return (

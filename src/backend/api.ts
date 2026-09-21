@@ -1,7 +1,7 @@
 // src/backend/api.ts
 import { supabase } from './supabaseClient';
 import type {
-    STUDENT, DEGREE_PROGRAM, COURSE,
+    STUDENT, DEGREE_PROGRAM, COURSE, COMPASS_USER,
     PROGRAM_COURSE, TERM_STANDING, ADVISING_REMARK, ACADEMIC_RECORD, COURSE_PREREQUISITE, ACADEMIC_TERM, AUDIT_LOG
 } from '../store/types';
 
@@ -27,41 +27,52 @@ const compareTerms = (termA: ACADEMIC_TERM, termB: ACADEMIC_TERM) => {
     return semWeights[termA.termSem] - semWeights[termB.termSem];
 };
 
-const evaluateAndApplyStanding = (
-    studentID: string, activeTerm: string, updatedRecords: ACADEMIC_RECORD[],
-    programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-    currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
-) => {
-    const newStanding = AcademicEngine.evaluateAcademicStanding(studentID, activeTerm, updatedRecords, programCourses, courses, program, currentStandings, terms);
+// REVISED: Shared helper to perfectly synchronize Dashboard and Shell notifications
+export const getManualReviewList = (standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string, activeUser: COMPASS_USER | null) => {
+    return standings.filter(ts => {
+        if (ts.termID !== activeTerm) return false;
+        if (ts.termAcademicStatus === 'On-Probation') return false;
 
-    const updatedStandingsArray = [...currentStandings];
-    const standingIndex = updatedStandingsArray.findIndex(ts => ts.standingID === newStanding.standingID);
+        if (ts.termAcademicStatus === 'Advised to Shift') {
+            // FIXED: Resolves TS2339 by checking the concatenated string content
+            const isAddressed = remarks.some(r => r.standingID === ts.standingID && r.content.includes('[Shifting Recommended]'));
+            return !isAddressed;
+        }
 
-    if (standingIndex >= 0) updatedStandingsArray[standingIndex] = newStanding;
-    else updatedStandingsArray.push(newStanding);
-
-    return { newStanding, updatedStandingsArray };
+        // FIXED: Simplified statement to appease linter
+        return ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff';
+    });
 };
 
-const AcademicEngine = {
-    evaluateAcademicStanding(
-        studentID: string, activeTerm: string, studentRecords: ACADEMIC_RECORD[],
-        programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-        currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
-    ): TERM_STANDING {
-        const activeTermDetails = terms.find(t => t.termID === activeTerm);
+const cascadeStandings = (
+    studentID: string,
+    updatedRecords: ACADEMIC_RECORD[],
+    programCourses: PROGRAM_COURSE[],
+    courses: COURSE[],
+    program: DEGREE_PROGRAM,
+    currentStandings: TERM_STANDING[],
+    terms: ACADEMIC_TERM[],
+    modifiedTermID: string // FIXED: Forces algorithm to evaluate terms even if the last record was deleted
+) => {
+    const studentTermIDs = new Set(updatedRecords.filter(r => r.studentID === studentID).map(r => r.termID));
+    studentTermIDs.add(modifiedTermID);
 
-        const termRecords = studentRecords.filter(r => r.studentID === studentID && r.termID === activeTerm);
+    const studentTerms = terms.filter(t => studentTermIDs.has(t.termID)).sort(compareTerms);
 
-        const historicalRecords = studentRecords.filter(r => {
+    const newStandings: TERM_STANDING[] = [];
+    const unaffectedStandings = currentStandings.filter(ts => ts.studentID !== studentID);
+
+    for (const activeTermObj of studentTerms) {
+        const activeTerm = activeTermObj.termID;
+        const termRecords = updatedRecords.filter(r => r.studentID === studentID && r.termID === activeTerm);
+        const historicalRecords = updatedRecords.filter(r => {
             if (r.studentID !== studentID) return false;
             const rTerm = terms.find(t => t.termID === r.termID);
-            return rTerm && activeTermDetails && compareTerms(rTerm, activeTermDetails) <= 0;
+            return rTerm && compareTerms(rTerm, activeTermObj) <= 0;
         });
 
         const calculateQPA = (recordsToEvaluate: ACADEMIC_RECORD[]) => {
-            let totalPoints = 0;
-            let totalUnits = 0;
+            let totalPoints = 0; let totalUnits = 0;
             recordsToEvaluate.forEach(record => {
                 const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
                 if (pc && pc.isCQPAIncluded && record.finalGrade !== null) {
@@ -81,24 +92,13 @@ const AcademicEngine = {
         const hasBlankRecords = termRecords.some(r => r.finalGrade === null && !r.gradeRemarks);
         const isTermIncomplete = termRecords.length === 0 || hasBlankRecords;
 
-        const pastStandings = currentStandings
-            .filter(ts => {
-                if (ts.studentID !== studentID || ts.termID === activeTerm) return false;
-                const tsTerm = terms.find(t => t.termID === ts.termID);
-                return tsTerm && activeTermDetails && compareTerms(tsTerm, activeTermDetails) < 0;
-            })
-            .sort((a, b) => {
-                const termA = terms.find(t => t.termID === a.termID);
-                const termB = terms.find(t => t.termID === b.termID);
-                if (!termA || !termB) return 0;
-                return compareTerms(termB, termA);
-            });
+        const pastStandings = newStandings.filter(ts => {
+            const tsTerm = terms.find(t => t.termID === ts.termID);
+            return tsTerm && compareTerms(tsTerm, activeTermObj) < 0;
+        });
 
-        const pastOPCount = pastStandings.filter(ts =>
-            ts.termAcademicStatus === "On-Probation" || ts.termAcademicStatus === "Advised to Shift"
-        ).length;
+        const pastOPCount = pastStandings.filter(ts => ts.termAcademicStatus === "On-Probation" || ts.termAcademicStatus === "Advised to Shift").length;
 
-        // FIXED: Removed useless initialization to appease ESLint
         let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
         let isConsecutiveOP = false;
 
@@ -123,11 +123,13 @@ const AcademicEngine = {
         const existingStanding = currentStandings.find(ts => ts.studentID === studentID && ts.termID === activeTerm);
         const standingID = existingStanding ? existingStanding.standingID : generateID('ST-');
 
-        return {
+        newStandings.push({
             standingID, termQPA: termQPA || 0.0, semCQPA, termAcademicStatus: status,
             isConsecutiveOP, studentID, termID: activeTerm
-        };
+        });
     }
+
+    return { newStandings, updatedStandingsArray: [...unaffectedStandings, ...newStandings] };
 };
 
 export const backendAPI = {
@@ -172,7 +174,6 @@ export const backendAPI = {
                 ...ts,
                 termQPA: ts.termQPA || 0.0,
                 semCQPA: ts.semCQPA || 0.0,
-                // FIXED: Cast as string to appease strict TS union overlap checking
                 termAcademicStatus: (ts.termAcademicStatus as string) === 'Advised-to-Shift' ? 'Advised to Shift' : ts.termAcademicStatus
             }));
 
@@ -374,7 +375,8 @@ export const backendAPI = {
         const updatedRecordsArray = [...currentRecords];
 
         if (recordID) {
-            updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks };
+            // FIXED: Explicitly passes null instead of undefined to satisfy strict types and database rules
+            updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks: gradeRemarks || null };
             const { error } = await supabase.from('ACADEMIC_RECORD').update({ finalGrade, isFailed, gradeRemarks }).eq('recordID', recordID);
             if (error) return { recordsData: null, standingsData: null, error: error.message };
             const index = updatedRecordsArray.findIndex(r => r.recordID === recordID);
@@ -383,22 +385,22 @@ export const backendAPI = {
             const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
             if (!pc) return { recordsData: null, standingsData: null, error: "Course not found in curriculum." };
             updatedRecord = {
-                recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks, dateEncoded: new Date().toISOString().split('T')[0],
+                recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks: gradeRemarks || null, dateEncoded: new Date().toISOString().split('T')[0],
                 programCourseID: pc.programCourseID, termID: activeTerm, studentID: student.studentID, userID
             };
-            const { error } = await supabase.from('ACADEMIC_RECORD').insert([{ ...updatedRecord }]);
+            const { error } = await supabase.from('ACADEMIC_RECORD').insert([{ ...updatedRecord, gradeRemarks }]);
             if (error) return { recordsData: null, standingsData: null, error: error.message };
             updatedRecordsArray.push(updatedRecord);
         }
 
-        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(student.studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
+        const { newStandings, updatedStandingsArray } = cascadeStandings(student.studentID, updatedRecordsArray, programCourses, courses, program, currentStandings, terms, activeTerm);
 
-        // FIXED: Cast as string to appease TS
-        const dbStanding = {
-            ...newStanding,
-            termAcademicStatus: (newStanding.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
-        };
-        const { error: standError } = await supabase.from('TERM_STANDING').upsert([dbStanding], { onConflict: 'standingID' });
+        const dbStandings = newStandings.map(ns => ({
+            ...ns,
+            termAcademicStatus: (ns.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : ns.termAcademicStatus
+        }));
+
+        const { error: standError } = await supabase.from('TERM_STANDING').upsert(dbStandings, { onConflict: 'standingID' });
         if (standError) return { recordsData: null, standingsData: null, error: standError.message };
 
         return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, error: null };
@@ -413,14 +415,14 @@ export const backendAPI = {
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
 
-        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
+        // FIXED: Passes activeTerm as the modifiedTermID to securely recalculate even if the term was left empty
+        const { newStandings, updatedStandingsArray } = cascadeStandings(studentID, updatedRecordsArray, programCourses, courses, program, currentStandings, terms, activeTerm);
 
-        // FIXED: Cast as string to appease TS
-        const dbStanding = {
-            ...newStanding,
-            termAcademicStatus: (newStanding.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
-        };
-        await supabase.from('TERM_STANDING').upsert([dbStanding], { onConflict: 'standingID' });
+        const dbStandings = newStandings.map(ns => ({
+            ...ns,
+            termAcademicStatus: (ns.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : ns.termAcademicStatus
+        }));
+        await supabase.from('TERM_STANDING').upsert(dbStandings, { onConflict: 'standingID' });
 
         return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, error: null };
     },
