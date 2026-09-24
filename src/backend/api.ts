@@ -27,23 +27,6 @@ const compareTerms = (termA: ACADEMIC_TERM, termB: ACADEMIC_TERM) => {
     return semWeights[termA.termSem] - semWeights[termB.termSem];
 };
 
-// REVISED: Shared helper to perfectly synchronize Dashboard and Shell notifications
-export const getManualReviewList = (standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string, activeUser: COMPASS_USER | null) => {
-    return standings.filter(ts => {
-        if (ts.termID !== activeTerm) return false;
-        if (ts.termAcademicStatus === 'On-Probation') return false;
-
-        if (ts.termAcademicStatus === 'Advised to Shift') {
-            // FIXED: Resolves TS2339 by checking the concatenated string content
-            const isAddressed = remarks.some(r => r.standingID === ts.standingID && r.content.includes('[Shifting Recommended]'));
-            return !isAddressed;
-        }
-
-        // FIXED: Simplified statement to appease linter
-        return ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff';
-    });
-};
-
 const cascadeStandings = (
     studentID: string,
     updatedRecords: ACADEMIC_RECORD[],
@@ -52,7 +35,7 @@ const cascadeStandings = (
     program: DEGREE_PROGRAM,
     currentStandings: TERM_STANDING[],
     terms: ACADEMIC_TERM[],
-    modifiedTermID: string // FIXED: Forces algorithm to evaluate terms even if the last record was deleted
+    modifiedTermID: string
 ) => {
     const studentTermIDs = new Set(updatedRecords.filter(r => r.studentID === studentID).map(r => r.termID));
     studentTermIDs.add(modifiedTermID);
@@ -133,6 +116,21 @@ const cascadeStandings = (
 };
 
 export const backendAPI = {
+    // FIXED: Moved inside backendAPI object to prevent WSOD
+    getManualReviewList(standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string, activeUser: COMPASS_USER | null) {
+        return standings.filter(ts => {
+            if (ts.termID !== activeTerm) return false;
+            if (ts.termAcademicStatus === 'On-Probation') return false;
+
+            if (ts.termAcademicStatus === 'Advised to Shift') {
+                const isAddressed = remarks.some(r => r.standingID === ts.standingID && r.content.includes('[Shifting Recommended]'));
+                return !isAddressed;
+            }
+
+            return ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff';
+        });
+    },
+
     async fetchInitialSystemData() {
         try {
             const [
@@ -375,7 +373,6 @@ export const backendAPI = {
         const updatedRecordsArray = [...currentRecords];
 
         if (recordID) {
-            // FIXED: Explicitly passes null instead of undefined to satisfy strict types and database rules
             updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks: gradeRemarks || null };
             const { error } = await supabase.from('ACADEMIC_RECORD').update({ finalGrade, isFailed, gradeRemarks }).eq('recordID', recordID);
             if (error) return { recordsData: null, standingsData: null, error: error.message };
@@ -415,7 +412,6 @@ export const backendAPI = {
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
 
-        // FIXED: Passes activeTerm as the modifiedTermID to securely recalculate even if the term was left empty
         const { newStandings, updatedStandingsArray } = cascadeStandings(studentID, updatedRecordsArray, programCourses, courses, program, currentStandings, terms, activeTerm);
 
         const dbStandings = newStandings.map(ns => ({
