@@ -5,8 +5,25 @@ import type { DEGREE_PROGRAM, PROGRAM_COURSE } from "../store/types";
 import { backendAPI } from "../backend/api";
 import * as I from "./icons";
 
+// REVISION 3: Intelligent Regex auto-formatter to enforce institutional spacing rules.
+const formatCourseCode = (val: string) => {
+    let c = val.replace(/\s+/g, "").toUpperCase();
+    const match = c.match(/\d/);
+    if (!match) return c;
+    const idx = match.index!;
+    let prefix = c.substring(0, idx);
+    let suffix = c.substring(idx);
+
+    // Safely handles Elective markers without breaking general education (GE) markers
+    if (prefix.endsWith("E") && prefix.length > 2) {
+        prefix = prefix.substring(0, prefix.length - 1);
+        suffix = "E" + suffix;
+    }
+    return `${prefix}${suffix}`;
+};
+
 export default function Curriculum() {
-    const { programs, setPrograms, courses, setCourses, programCourses, setProgramCourses, pushAudit, can} = useStore();
+    const { programs, setPrograms, courses, setCourses, programCourses, setProgramCourses, coursePrerequisites, setCoursePrerequisites, pushAudit, can} = useStore();
 
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedProgram, setSelectedProgram] = useState<DEGREE_PROGRAM | null>(null);
@@ -61,10 +78,16 @@ export default function Curriculum() {
 
     const openCourseForm = (course?: PROGRAM_COURSE & { courseTitle: string, courseUnits: number }) => {
         if (course) {
+            const prereqs = coursePrerequisites.filter(pr => pr.programCourseID === course.programCourseID);
+            const prereqCodesString = prereqs.map(pr => {
+                const prereqPC = programCourses.find(pc => pc.programCourseID === pr.prereqProgramCourseID);
+                return prereqPC ? prereqPC.courseCode : null;
+            }).filter(Boolean).join(", ");
+
             setCourseForm({
                 courseCode: course.courseCode, title: course.courseTitle, units: course.courseUnits.toString(),
                 yearLevel: course.yearLevel.toString(), semester: course.termSem, classification: course.majorMinorClassif,
-                isCQPAIncluded: course.isCQPAIncluded, prerequisites: ""
+                isCQPAIncluded: course.isCQPAIncluded, prerequisites: prereqCodesString
             });
             setEditingCourseCode(course.courseCode);
         } else {
@@ -113,26 +136,37 @@ export default function Curriculum() {
             classification: courseForm.classification as "Major" | "Minor"
         };
 
-        const { coursesData, programCoursesData, error } = await backendAPI.saveCourseToCurriculum(
-            strictPayload, selectedProgram, editingCourseCode, courses, programCourses
+        const { coursesData, programCoursesData, coursePrerequisitesData, error } = await backendAPI.saveCourseToCurriculum(
+            strictPayload, selectedProgram, editingCourseCode, courses, programCourses, coursePrerequisites
         );
 
         if (error) return alert(error);
 
         if (coursesData) setCourses(coursesData);
         if (programCoursesData) setProgramCourses(programCoursesData);
+        if (coursePrerequisitesData) setCoursePrerequisites(coursePrerequisitesData);
 
         const code = courseForm.courseCode.trim().toUpperCase();
-        if (editingCourseCode) pushAudit("UPDATED_COURSE_IN_CURRICULUM", `${selectedProgram.programCode} -> ${code}`);
-        else pushAudit("ADDED_COURSE_TO_CURRICULUM", `${selectedProgram.programCode} -> ${code}`);
+        if (editingCourseCode) pushAudit("UPDATED_COURSE_IN_CURRICULUM", `${selectedProgram.programCode} ->${code}`);
+        else pushAudit("ADDED_COURSE_TO_CURRICULUM", `${selectedProgram.programCode} ->${code}`);
 
         setShowCourseForm(false);
     };
 
-    const handleDeleteCourse = (courseCode: string) => {
-        if (!selectedProgram || !window.confirm(`Remove ${courseCode} from curriculum?`)) return;
-        // FIXED: Added precise PROGRAM_COURSE typings to the callback parameters
-        setProgramCourses((prev: PROGRAM_COURSE[]) => prev.filter((pc: PROGRAM_COURSE) => !(pc.programCode === selectedProgram.programCode && pc.courseCode === courseCode)));
+    const handleDeleteCourse = async (courseCode: string) => {
+        if (!selectedProgram || !window.confirm(`Are you sure you want to permanently remove ${courseCode} from the curriculum?`)) return;
+
+        // FIXED: Await actual database deletion and prerequisite cascade clearing
+        const { programCoursesData, coursePrerequisitesData, error } = await backendAPI.deleteCourseFromCurriculum(
+            selectedProgram.programCode, courseCode, programCourses, coursePrerequisites
+        );
+
+        if (error) return alert(`Deletion failed: ${error}`);
+
+        // Only update UI if the database successfully processed the deletion
+        if (programCoursesData) setProgramCourses(programCoursesData);
+        if (coursePrerequisitesData) setCoursePrerequisites(coursePrerequisitesData);
+
         pushAudit("REMOVED_COURSE_FROM_CURRICULUM", `${selectedProgram.programCode} -> ${courseCode}`);
     };
 
@@ -200,13 +234,30 @@ export default function Curriculum() {
                             <form onSubmit={handleSaveCourse} className="border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-5 shadow-inner transition-colors">
                                 <div className="mb-3 font-bold text-slate-700 dark:text-slate-300">{editingCourseCode ? "Edit Subject" : "New Subject"}</div>
                                 <div className="grid grid-cols-4 gap-3">
-                                    <input required placeholder="Code (e.g. CS40)" value={courseForm.courseCode} onChange={e => setCourseForm({...courseForm, courseCode: e.target.value.toUpperCase()})} className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60" disabled={!!editingCourseCode} />
+                                    {/* FIXED: Decoupled formatting to onBlur to allow free typing with spaces */}
+                                    <input
+                                        required
+                                        placeholder="Code (e.g. CS40)"
+                                        value={courseForm.courseCode}
+                                        onChange={e => setCourseForm({...courseForm, courseCode: e.target.value.toUpperCase()})}
+                                        onBlur={e => setCourseForm({...courseForm, courseCode: formatCourseCode(e.target.value)})}
+                                        className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60"
+                                        disabled={!!editingCourseCode}
+                                    />
                                     <input required placeholder="Descriptive Title" value={courseForm.title} onChange={e => setCourseForm({...courseForm, title: e.target.value})} className="col-span-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500" />
                                     <input required type="number" placeholder="Units" value={courseForm.units} onChange={e => setCourseForm({...courseForm, units: e.target.value})} className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500" />
                                     <select required value={courseForm.yearLevel} onChange={e => setCourseForm({...courseForm, yearLevel: e.target.value})} className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500"><option value="" disabled hidden>Year Lvl...</option>{years.map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                     <select required value={courseForm.semester} onChange={e => setCourseForm({...courseForm, semester: e.target.value as SemesterType})} className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500"><option value="" disabled hidden>Semester...</option><option value="1st Semester">1st Semester</option><option value="2nd Semester">2nd Semester</option><option value="Midyear">Mid-Year</option></select>
                                     <select required value={courseForm.classification} onChange={e => setCourseForm({...courseForm, classification: e.target.value as ClassifType})} className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500"><option value="" disabled hidden>Type...</option><option>Major</option><option>Minor</option></select>
-                                    <input placeholder="Prereqs (e.g. CS31)" value={courseForm.prerequisites} onChange={e => setCourseForm({...courseForm, prerequisites: e.target.value.toUpperCase()})} className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500" />
+
+                                    {/* FIXED: Decoupled formatting allows free typing, validates and cleans up arrays on blur */}
+                                    <input
+                                        placeholder="Prereqs (e.g. CS 31, CS 35)"
+                                        value={courseForm.prerequisites}
+                                        onChange={e => setCourseForm({...courseForm, prerequisites: e.target.value.toUpperCase()})}
+                                        onBlur={e => setCourseForm({...courseForm, prerequisites: e.target.value.split(',').map(s => formatCourseCode(s)).filter(s => s.trim() !== "").join(', ')})}
+                                        className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500"
+                                    />
                                 </div>
                                 <div className="mt-4 flex items-center justify-between">
                                     <div className="flex gap-4 text-sm font-semibold text-slate-700 dark:text-slate-300"><label className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={courseForm.isCQPAIncluded} onChange={e => setCourseForm({...courseForm, isCQPAIncluded: e.target.checked})} className="h-4 w-4 accent-blue-700" /> Count in CQPA</label></div>
@@ -231,9 +282,17 @@ export default function Curriculum() {
                                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                                                         {coursesList.map(course => {
                                                             const isMatch = searchQuery && (course.courseCode.toLowerCase().includes(searchQuery.toLowerCase()) || course.courseTitle.toLowerCase().includes(searchQuery.toLowerCase()));
+
+                                                            const prereqs = coursePrerequisites.filter(pr => pr.programCourseID === course.programCourseID);
+                                                            const prereqCodesString = prereqs.map(pr => {
+                                                                const prereqPC = programCourses.find(pc => pc.programCourseID === pr.prereqProgramCourseID);
+                                                                return prereqPC ? prereqPC.courseCode : null;
+                                                            }).filter(Boolean).join(", ");
+                                                            const displayPrereqs = prereqCodesString || "None";
+
                                                             return (
                                                                 <tr key={course.courseCode} className={`transition ${isMatch ? 'bg-amber-50 dark:bg-amber-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>
-                                                                    <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-200">{course.courseCode}</td><td className="px-5 py-3 text-xs">{course.courseTitle}</td><td className="px-5 py-3 text-center font-mono">{course.courseUnits}</td><td className="px-5 py-3 text-center text-xs font-mono text-slate-500 dark:text-slate-500">None</td>
+                                                                    <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-200">{course.courseCode}</td><td className="px-5 py-3 text-xs">{course.courseTitle}</td><td className="px-5 py-3 text-center font-mono">{course.courseUnits}</td><td className="px-5 py-3 text-center text-xs font-mono text-slate-500 dark:text-slate-500">{displayPrereqs}</td>
                                                                     <td className="px-5 py-3 text-center"><div className="flex justify-center gap-1">{course.majorMinorClassif === 'Major' && <span className="rounded bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 dark:text-blue-400">MAJOR</span>}{course.isCQPAIncluded && <span className="rounded bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 dark:text-blue-400">CQPA</span>}</div></td>
                                                                     <td className="px-5 py-3 text-right">{can('manage_curriculum') && (<div className="flex items-center justify-end gap-2"><button onClick={() => openCourseForm(course)} className="rounded p-1.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-blue-700 dark:hover:text-blue-400 transition"><I.Edit2 className="h-4 w-4" /></button><button onClick={() => handleDeleteCourse(course.courseCode)} className="rounded p-1.5 text-slate-400 dark:text-slate-500 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-coral dark:hover:text-red-400 transition"><I.X className="h-4 w-4" /></button></div>)}</td>
                                                                 </tr>

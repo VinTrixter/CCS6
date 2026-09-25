@@ -44,6 +44,7 @@ interface CompassState {
     setRemarks: Dispatch<SetStateAction<ADVISING_REMARK[]>>;
     setStandings: Dispatch<SetStateAction<TERM_STANDING[]>>;
     setTerms: Dispatch<SetStateAction<ACADEMIC_TERM[]>>;
+    setCoursePrerequisites: Dispatch<SetStateAction<COURSE_PREREQUISITE[]>>;
     setActiveTerm: Dispatch<SetStateAction<string>>;
     setActiveView: Dispatch<SetStateAction<View>>;
     setPendingReportFilter: Dispatch<SetStateAction<string>>;
@@ -123,7 +124,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     const pushAudit = (action: string, target: string) => {
         if (!activeUser) return;
-        // FIXED: Generates an exact 10-character ID to satisfy varchar(10) database limits
         const logID = `LG-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
         const newLog: AUDIT_LOG = { logID, timestamp: new Date().toISOString(), userID: activeUser.userID, action, target };
         setAuditLogs(prev => [newLog, ...prev]);
@@ -155,7 +155,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             activeView, pendingReportFilter, focusedStudentID, pendingEvaluatorAction,
             isDarkMode, pendingSettingsTab, highlightReviewTable,
             setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
-            setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setActiveTerm,
+            setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setCoursePrerequisites, setActiveTerm,
             setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction,
             setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, pushAudit, can
         }}>

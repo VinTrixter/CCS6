@@ -1,8 +1,8 @@
 // src/components/Reports.tsx
 import { useState, useEffect } from "react";
-import { useStore, type EnrichedStudent } from "../store/store";
+import { useStore } from "../store/store";
 import type { TERM_STANDING } from "../store/types";
-import { backendAPI } from "../backend/api";
+import { backendAPI, type EnrichedStudent } from "../backend/api";
 import * as I from "./icons";
 
 type ReportRecord = TERM_STANDING & { student: EnrichedStudent };

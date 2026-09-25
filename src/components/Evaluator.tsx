@@ -13,6 +13,7 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
     const [val, setVal] = useState(initialValue);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setVal(initialValue);
     }, [initialValue]);
 
@@ -68,10 +69,34 @@ export default function Evaluator() {
     const [progressStats, setProgressStats] = useState({ completed: [] as PROGRAM_COURSE[], enrolled: [] as PROGRAM_COURSE[], remaining: [] as PROGRAM_COURSE[] });
     const [isLoading, setIsLoading] = useState(false);
 
-    const searchResults = students.filter(s => s.studLastName.toLowerCase().includes(searchQuery.toLowerCase()) || s.studFirstName.toLowerCase().includes(searchQuery.toLowerCase()) || s.studentID.includes(searchQuery));
-    const termStanding = standings.find(ts => ts.studentID === selectedStudent?.studentID && ts.termID === activeTerm);
-    const termDetails = terms.find(t => t.termID === activeTerm);
+    const [localTerm, setLocalTerm] = useState<string>(activeTerm);
+
+    const searchResults = students.filter(s => {
+        const compositeString = `${s.studFirstName} ${s.studLastName} ${s.studLastName}, ${s.studFirstName} ${s.studentID}`.toLowerCase();
+        return compositeString.includes(searchQuery.toLowerCase().trim());
+    });
+
+    const termStanding = standings.find(ts => ts.studentID === selectedStudent?.studentID && ts.termID === localTerm);
     const historyStandings = standings.filter(ts => ts.studentID === selectedStudent?.studentID);
+
+    const localTermDetails = terms.find(t => t.termID === localTerm);
+    const activeTermObj = terms.find(t => t.termID === activeTerm);
+
+    const availableTerms = terms.filter(t => {
+        if (!activeTermObj) return false;
+        if (t.termSY !== activeTermObj.termSY) return t.termSY.localeCompare(activeTermObj.termSY) <= 0;
+        const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+        return semWeights[t.termSem] <= semWeights[activeTermObj.termSem];
+    }).sort((a, b) => {
+        if (a.termSY !== b.termSY) return b.termSY.localeCompare(a.termSY);
+        const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+        return semWeights[b.termSem] - semWeights[a.termSem];
+    });
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLocalTerm(activeTerm);
+    }, [activeTerm, selectedStudent?.studentID]);
 
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
@@ -97,21 +122,33 @@ export default function Evaluator() {
     }, [pendingEvaluatorAction, focusedStudentID, setFocusedStudentID, setPendingEvaluatorAction]);
 
     useEffect(() => {
+        // eslint-disable-next-line prefer-const
         let isMounted = true;
         const fetchBackendData = async () => {
             setIsLoading(true);
-            const rows = await backendAPI.getEnrichedGrades(selectedStudent, activeTerm, termDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses);
+            // FIXED: Added activeTerm as the 9th parameter to enforce strict chronological isolation
+            const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm);
             const prog = await backendAPI.getCurriculumProgress(selectedStudent, activeTerm, programCourses, records);
             if (isMounted) { setDisplayRows(rows); setProgressStats(prog); setIsLoading(false); }
         };
         void fetchBackendData();
         return () => { isMounted = false; };
-    }, [selectedStudent, activeTerm, termDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses]);
+    }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm]);
+
+    const handleIDChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let val = e.target.value.replace(/\D/g, '');
+        if (val.length > 3) {
+            val = `${val.slice(0,2)}-${val.slice(2,3)}-${val.slice(3, 10)}`;
+        } else if (val.length > 2) {
+            val = `${val.slice(0,2)}-${val.slice(2,3)}`;
+        }
+        setFormData({...formData, studentID: val});
+    };
 
     const handleAutoPopulate = async () => {
-        if (!activeUser || !selectedStudent || !termDetails) return;
-        const newRecords = await backendAPI.generateAutoPopulateRecords(selectedStudent, activeTerm, termDetails, programCourses, records, activeUser.userID);
-        if (newRecords.length > 0) { setRecords([...records, ...newRecords]); pushAudit("AUTO_POPULATED_TERM_GRADES", selectedStudent.studentID); }
+        if (!activeUser || !selectedStudent || !localTermDetails) return;
+        const newRecords = await backendAPI.generateAutoPopulateRecords(selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID);
+        if (newRecords.length > 0) { setRecords([...records, ...newRecords]); pushAudit(`AUTO_POPULATED_GRADES_${localTerm}`, selectedStudent.studentID); }
     };
 
     const handleAddExtraCourse = async (courseCode: string) => {
@@ -120,14 +157,14 @@ export default function Evaluator() {
         if (!activeProgram) return;
 
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
-            courseCode, "", undefined, selectedStudent, activeTerm, records,
+            courseCode, "", undefined, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms
         );
 
         if (error) return alert(error);
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
-        pushAudit("ADDED_SUBJECT_TO_TERM", selectedStudent.studentID);
+        pushAudit(`ADDED_SUBJECT_${localTerm}`, selectedStudent.studentID);
         setShowExtraCourseDropdown(false);
     };
 
@@ -137,7 +174,7 @@ export default function Evaluator() {
         if (!activeProgram) return;
 
         const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
-            code, val, recordID, selectedStudent, activeTerm, records,
+            code, val, recordID, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms
         );
 
@@ -153,7 +190,7 @@ export default function Evaluator() {
         if (!activeProgram) return;
 
         const { recordsData, standingsData, error } = await backendAPI.deleteGradeRow(
-            recordID, records, selectedStudent.studentID, activeTerm,
+            recordID, records, selectedStudent.studentID, localTerm,
             programCourses, courses, activeProgram, standings, terms
         );
 
@@ -166,7 +203,13 @@ export default function Evaluator() {
 
     const handleCreateStudent = async (e: React.SyntheticEvent) => {
         e.preventDefault();
-        if (!formData.studentID || !formData.firstName || !formData.lastName) return alert("Required fields missing.");
+
+        const cleanID = formData.studentID.replace(/\D/g, '');
+        if (cleanID.length < 7) {
+            return alert("Invalid Student ID format. It must contain at least 7 digits (e.g., XX-X-XXXX).");
+        }
+
+        if (!formData.firstName || !formData.lastName) return alert("Required fields missing.");
         const newStudent: EnrichedStudent = {
             studentID: formData.studentID, studFirstName: formData.firstName, studMiddleName: formData.middleName, studLastName: formData.lastName,
             shsTrack: formData.shsTrack as EnrichedStudent["shsTrack"], yearLevel: Number(formData.yearLevel) as EnrichedStudent["yearLevel"], accountStatus: "Active", programCode: formData.programCode
@@ -211,7 +254,7 @@ export default function Evaluator() {
     const handleSaveRemark = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!activeUser || !remarkForm.content.trim() || !selectedStudent) return;
-        const { data, error } = await backendAPI.upsertRemark(remarkForm, editingRemarkID, selectedStudent.studentID, activeTerm, activeUser.userID, remarks, standings);
+        const { data, error } = await backendAPI.upsertRemark(remarkForm, editingRemarkID, selectedStudent.studentID, localTerm, activeUser.userID, remarks, standings);
         if (error) return alert(error);
         if (data) setRemarks(data);
         if (editingRemarkID) pushAudit("UPDATED_REMARK", editingRemarkID);
@@ -247,7 +290,7 @@ export default function Evaluator() {
                     <form onSubmit={handleCreateStudent} className="flex shrink-0 flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm transition-colors">
                         <div><h2 className="font-bold text-slate-800 dark:text-slate-100">Register New Student</h2></div>
                         <div className="flex flex-col gap-3">
-                            <input required placeholder="Student ID (XX-X-XXXXX)" value={formData.studentID} onChange={e => setFormData({...formData, studentID: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
+                            <input required placeholder="Student ID (XX-X-XXXXX)" value={formData.studentID} onChange={handleIDChange} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm font-mono outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input required placeholder="First Name" value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input placeholder="Middle Name (Optional)" value={formData.middleName} onChange={e => setFormData({...formData, middleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input required placeholder="Last Name" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
@@ -310,7 +353,7 @@ export default function Evaluator() {
                                                 </div>
                                                 <div className="font-mono text-sm text-slate-500 dark:text-slate-400">{selectedStudent.studentID}</div>
                                             </div>
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${termStanding?.termAcademicStatus === 'Advised to Shift' ? 'bg-coral dark:bg-red-700 text-white' : termStanding?.termAcademicStatus === 'On-Probation' ? 'bg-amber dark:bg-amber-700 text-white' : 'bg-blue-700 dark:bg-blue-600 text-white'}`}>{termStanding?.termAcademicStatus || "No Data"}</span>
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${termStanding?.termAcademicStatus === 'Advised to Shift' ? 'bg-coral dark:bg-red-700 text-white' : termStanding?.termAcademicStatus === 'On-Probation' ? 'bg-amber dark:bg-amber-700 text-white' : termStanding?.termAcademicStatus === 'Unencoded' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-700 dark:bg-blue-600 text-white'}`}>{termStanding?.termAcademicStatus || "No Data"}</span>
                                         </div>
 
                                         {isEditingProfile && editFormData ? (
@@ -362,7 +405,7 @@ export default function Evaluator() {
                                                 <div className="col-span-3 mt-2 grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-3">
                                                     <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Program</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedStudent.programCode}</div></div>
                                                     <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Year Lvl</div><div className="font-medium text-slate-700 dark:text-slate-300">Year {selectedStudent.yearLevel}</div></div>
-                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Term</div><div className="font-medium text-slate-700 dark:text-slate-300">{termDetails?.termSem}</div></div>
+                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Term Profile</div><div className="font-medium text-slate-700 dark:text-slate-300">{localTermDetails?.termSem}</div></div>
                                                 </div>
                                             </div>
                                         )}
@@ -387,12 +430,25 @@ export default function Evaluator() {
                         <>
                             {activeTab === "grades" && (
                                 <div className="flex h-full flex-col">
-                                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 p-4">
-                                        <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Encoded Subjects ({displayRows.length})</div>
+                                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 p-4 flex-wrap gap-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Encoded Subjects ({displayRows.length})</div>
+                                            <select
+                                                value={localTerm}
+                                                onChange={e => setLocalTerm(e.target.value)}
+                                                className="rounded-md border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"
+                                            >
+                                                {availableTerms.map(t => (
+                                                    <option key={t.termID} value={t.termID}>
+                                                        {t.termSem}, AY {t.termSY} {t.termID === activeTerm ? "(Current)" : ""}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                         {can('encode_grades') && (
                                             <div className="flex gap-2">
                                                 <button onClick={handleAutoPopulate} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400">
-                                                    Auto-Populate Current Term
+                                                    Auto-Populate Term
                                                 </button>
                                                 <div className="relative">
                                                     <button onClick={() => setShowExtraCourseDropdown(!showExtraCourseDropdown)} className="rounded-md bg-blue-700 dark:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700">
@@ -461,7 +517,7 @@ export default function Evaluator() {
                                                 <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.termID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                     <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800 dark:text-slate-200">{term?.termSem}</div><div className="text-xs text-slate-500 dark:text-slate-400">AY {term?.termSY}</div></div></td>
                                                     <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.semCQPA.toFixed(2)}</td>
-                                                    <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : ts.termAcademicStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{ts.termAcademicStatus}</span></td>
+                                                    <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : ts.termAcademicStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : ts.termAcademicStatus === 'Unencoded' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{ts.termAcademicStatus}</span></td>
                                                 </tr>
                                                 {isExpanded && (
                                                     <tr>
@@ -482,7 +538,6 @@ export default function Evaluator() {
                                                                             <tr key={rec.recordID} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
                                                                                 <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
                                                                                 <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
-                                                                                {/* Maps null correctly to display the remark instead */}
                                                                                 <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade) : (rec.gradeRemarks || '-')}</td>
                                                                             </tr>
                                                                         )

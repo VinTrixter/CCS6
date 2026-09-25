@@ -1,7 +1,7 @@
 // src/backend/api.ts
 import { supabase } from './supabaseClient';
 import type {
-    STUDENT, DEGREE_PROGRAM, COURSE,
+    STUDENT, DEGREE_PROGRAM, COURSE, COMPASS_USER,
     PROGRAM_COURSE, TERM_STANDING, ADVISING_REMARK, ACADEMIC_RECORD, COURSE_PREREQUISITE, ACADEMIC_TERM, AUDIT_LOG
 } from '../store/types';
 
@@ -27,41 +27,35 @@ const compareTerms = (termA: ACADEMIC_TERM, termB: ACADEMIC_TERM) => {
     return semWeights[termA.termSem] - semWeights[termB.termSem];
 };
 
-const evaluateAndApplyStanding = (
-    studentID: string, activeTerm: string, updatedRecords: ACADEMIC_RECORD[],
-    programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-    currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
+const cascadeStandings = (
+    studentID: string,
+    updatedRecords: ACADEMIC_RECORD[],
+    programCourses: PROGRAM_COURSE[],
+    courses: COURSE[],
+    program: DEGREE_PROGRAM,
+    currentStandings: TERM_STANDING[],
+    terms: ACADEMIC_TERM[],
+    modifiedTermID: string
 ) => {
-    const newStanding = AcademicEngine.evaluateAcademicStanding(studentID, activeTerm, updatedRecords, programCourses, courses, program, currentStandings, terms);
+    const studentTermIDs = new Set(updatedRecords.filter(r => r.studentID === studentID).map(r => r.termID));
+    studentTermIDs.add(modifiedTermID);
 
-    const updatedStandingsArray = [...currentStandings];
-    const standingIndex = updatedStandingsArray.findIndex(ts => ts.standingID === newStanding.standingID);
+    const studentTerms = terms.filter(t => studentTermIDs.has(t.termID)).sort(compareTerms);
 
-    if (standingIndex >= 0) updatedStandingsArray[standingIndex] = newStanding;
-    else updatedStandingsArray.push(newStanding);
+    const newStandings: TERM_STANDING[] = [];
+    const unaffectedStandings = currentStandings.filter(ts => ts.studentID !== studentID);
 
-    return { newStanding, updatedStandingsArray };
-};
-
-const AcademicEngine = {
-    evaluateAcademicStanding(
-        studentID: string, activeTerm: string, studentRecords: ACADEMIC_RECORD[],
-        programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-        currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[]
-    ): TERM_STANDING {
-        const activeTermDetails = terms.find(t => t.termID === activeTerm);
-
-        const termRecords = studentRecords.filter(r => r.studentID === studentID && r.termID === activeTerm);
-
-        const historicalRecords = studentRecords.filter(r => {
+    for (const activeTermObj of studentTerms) {
+        const activeTerm = activeTermObj.termID;
+        const termRecords = updatedRecords.filter(r => r.studentID === studentID && r.termID === activeTerm);
+        const historicalRecords = updatedRecords.filter(r => {
             if (r.studentID !== studentID) return false;
             const rTerm = terms.find(t => t.termID === r.termID);
-            return rTerm && activeTermDetails && compareTerms(rTerm, activeTermDetails) <= 0;
+            return rTerm && compareTerms(rTerm, activeTermObj) <= 0;
         });
 
         const calculateQPA = (recordsToEvaluate: ACADEMIC_RECORD[]) => {
-            let totalPoints = 0;
-            let totalUnits = 0;
+            let totalPoints = 0; let totalUnits = 0;
             recordsToEvaluate.forEach(record => {
                 const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
                 if (pc && pc.isCQPAIncluded && record.finalGrade !== null) {
@@ -81,24 +75,13 @@ const AcademicEngine = {
         const hasBlankRecords = termRecords.some(r => r.finalGrade === null && !r.gradeRemarks);
         const isTermIncomplete = termRecords.length === 0 || hasBlankRecords;
 
-        const pastStandings = currentStandings
-            .filter(ts => {
-                if (ts.studentID !== studentID || ts.termID === activeTerm) return false;
-                const tsTerm = terms.find(t => t.termID === ts.termID);
-                return tsTerm && activeTermDetails && compareTerms(tsTerm, activeTermDetails) < 0;
-            })
-            .sort((a, b) => {
-                const termA = terms.find(t => t.termID === a.termID);
-                const termB = terms.find(t => t.termID === b.termID);
-                if (!termA || !termB) return 0;
-                return compareTerms(termB, termA);
-            });
+        const pastStandings = newStandings.filter(ts => {
+            const tsTerm = terms.find(t => t.termID === ts.termID);
+            return tsTerm && compareTerms(tsTerm, activeTermObj) < 0;
+        });
 
-        const pastOPCount = pastStandings.filter(ts =>
-            ts.termAcademicStatus === "On-Probation" || ts.termAcademicStatus === "Advised to Shift"
-        ).length;
+        const pastOPCount = pastStandings.filter(ts => ts.termAcademicStatus === "On-Probation" || ts.termAcademicStatus === "Advised to Shift").length;
 
-        // FIXED: Removed useless initialization to appease ESLint
         let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
         let isConsecutiveOP = false;
 
@@ -123,14 +106,33 @@ const AcademicEngine = {
         const existingStanding = currentStandings.find(ts => ts.studentID === studentID && ts.termID === activeTerm);
         const standingID = existingStanding ? existingStanding.standingID : generateID('ST-');
 
-        return {
+        newStandings.push({
             standingID, termQPA: termQPA || 0.0, semCQPA, termAcademicStatus: status,
             isConsecutiveOP, studentID, termID: activeTerm
-        };
+        });
     }
+
+    return { newStandings, updatedStandingsArray: [...unaffectedStandings, ...newStandings] };
 };
 
 export const backendAPI = {
+    getManualReviewList(standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string, activeUser: COMPASS_USER | null) {
+        const safeStandings = standings || [];
+        const safeRemarks = remarks || [];
+
+        return safeStandings.filter(ts => {
+            if (ts.termID !== activeTerm) return false;
+            if (ts.termAcademicStatus === 'On-Probation') return false;
+
+            if (ts.termAcademicStatus === 'Advised to Shift') {
+                const isAddressed = safeRemarks.some(r => r.standingID === ts.standingID && r.content && r.content.includes('[Shifting Recommended]'));
+                return !isAddressed;
+            }
+
+            return ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff';
+        });
+    },
+
     async fetchInitialSystemData() {
         try {
             const [
@@ -153,7 +155,7 @@ export const backendAPI = {
 
             type SupabaseStudent = STUDENT & { STUDENT_PROGRAM?: { programCode: string }[] };
 
-            const enrichedStudents: EnrichedStudent[] = (studentsRes.data as SupabaseStudent[]).map((student) => ({
+            const enrichedStudents: EnrichedStudent[] = ((studentsRes.data as SupabaseStudent[]) || []).map((student) => ({
                 ...student,
                 programCode: student.STUDENT_PROGRAM?.[0]?.programCode || "UNASSIGNED"
             }));
@@ -172,22 +174,21 @@ export const backendAPI = {
                 ...ts,
                 termQPA: ts.termQPA || 0.0,
                 semCQPA: ts.semCQPA || 0.0,
-                // FIXED: Cast as string to appease strict TS union overlap checking
                 termAcademicStatus: (ts.termAcademicStatus as string) === 'Advised-to-Shift' ? 'Advised to Shift' : ts.termAcademicStatus
             }));
 
             return {
                 data: {
                     students: enrichedStudents,
-                    programs: programsRes.data as DEGREE_PROGRAM[],
-                    courses: coursesRes.data as COURSE[],
-                    programCourses: mappedProgramCourses as PROGRAM_COURSE[],
-                    standings: mappedStandings as TERM_STANDING[],
-                    remarks: remarksRes.data as ADVISING_REMARK[],
-                    records: recordsRes.data as ACADEMIC_RECORD[],
-                    terms: termsRes.data as ACADEMIC_TERM[],
-                    coursePrerequisites: prereqsRes.data as COURSE_PREREQUISITE[],
-                    auditLogs: auditRes.data as AUDIT_LOG[]
+                    programs: (programsRes.data || []) as DEGREE_PROGRAM[],
+                    courses: (coursesRes.data || []) as COURSE[],
+                    programCourses: mappedProgramCourses,
+                    standings: mappedStandings,
+                    remarks: (remarksRes.data || []) as ADVISING_REMARK[],
+                    records: (recordsRes.data || []) as ACADEMIC_RECORD[],
+                    terms: (termsRes.data || []) as ACADEMIC_TERM[],
+                    coursePrerequisites: (prereqsRes.data || []) as COURSE_PREREQUISITE[],
+                    auditLogs: (auditRes.data || []) as AUDIT_LOG[]
                 },
                 error: null
             };
@@ -231,41 +232,45 @@ export const backendAPI = {
     async getEnrichedGrades(
         student: EnrichedStudent | null, activeTerm: string, termDetails: ACADEMIC_TERM | undefined,
         programCourses: PROGRAM_COURSE[], courses: COURSE[], records: ACADEMIC_RECORD[],
-        prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[]
+        prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[], globalActiveTermID: string
     ) {
         if (!student || !termDetails) return [];
         const studentRecords = records.filter(r => r.studentID === student.studentID && r.termID === activeTerm);
-        const curriculum = programCourses.filter(pc => pc.programCode === student.programCode && pc.yearLevel === student.yearLevel && pc.termSem === termDetails.termSem);
-
         const displayRows: EnrichedGradeRow[] = [];
 
-        curriculum.forEach(pc => {
-            const baseCourse = courses.find(c => c.courseCode === pc.courseCode);
-            if (!baseCourse || dismissedCourses.includes(pc.courseCode)) return;
+        // REVISION 2 (Frozen Row Fix): Strict isolation. If viewing a past term, completely skip curriculum template generation.
+        if (termDetails.termID === globalActiveTermID) {
+            const curriculum = programCourses.filter(pc => pc.programCode === student.programCode && pc.yearLevel === student.yearLevel && pc.termSem === termDetails.termSem);
 
-            const existingRecord = studentRecords.find(r => r.programCourseID === pc.programCourseID);
-            const coursePrereqs = prereqs.filter(pr => pr.programCourseID === pc.programCourseID);
-            let isMissingPrereq = false;
+            curriculum.forEach(pc => {
+                const baseCourse = courses.find(c => c.courseCode === pc.courseCode);
+                if (!baseCourse || dismissedCourses.includes(pc.courseCode)) return;
 
-            if (coursePrereqs.length > 0) {
-                const historicalRecords = records.filter(r => r.studentID === student.studentID && r.termID < activeTerm);
-                coursePrereqs.forEach(pr => {
-                    const passed = historicalRecords.find(hr => hr.programCourseID === pr.prereqProgramCourseID && !hr.isFailed && hr.finalGrade !== null);
-                    if (!passed) isMissingPrereq = true;
+                const existingRecord = studentRecords.find(r => r.programCourseID === pc.programCourseID);
+                const coursePrereqs = prereqs.filter(pr => pr.programCourseID === pc.programCourseID);
+                let isMissingPrereq = false;
+
+                if (coursePrereqs.length > 0) {
+                    const historicalRecords = records.filter(r => r.studentID === student.studentID && r.termID < activeTerm);
+                    coursePrereqs.forEach(pr => {
+                        const passed = historicalRecords.find(hr => hr.programCourseID === pr.prereqProgramCourseID && !hr.isFailed && hr.finalGrade !== null);
+                        if (!passed) isMissingPrereq = true;
+                    });
+                }
+
+                displayRows.push({
+                    courseCode: pc.courseCode,
+                    courseTitle: baseCourse.courseTitle,
+                    courseUnits: baseCourse.courseUnits,
+                    isMissingPrereq,
+                    finalGrade: existingRecord ? (existingRecord.finalGrade !== null ? (existingRecord.finalGrade === 0 ? "F" : existingRecord.finalGrade.toString()) : (existingRecord.gradeRemarks || "")) : "",
+                    isBlank: !existingRecord || (existingRecord.finalGrade === null && !existingRecord.gradeRemarks),
+                    recordID: existingRecord?.recordID
                 });
-            }
-
-            displayRows.push({
-                courseCode: pc.courseCode,
-                courseTitle: baseCourse.courseTitle,
-                courseUnits: baseCourse.courseUnits,
-                isMissingPrereq,
-                finalGrade: existingRecord ? (existingRecord.finalGrade !== null ? (existingRecord.finalGrade === 0 ? "F" : existingRecord.finalGrade.toString()) : (existingRecord.gradeRemarks || "")) : "",
-                isBlank: !existingRecord || (existingRecord.finalGrade === null && !existingRecord.gradeRemarks),
-                recordID: existingRecord?.recordID
             });
-        });
+        }
 
+        // Map encoded records. The duplicate check (.some) ensures no key collisions occur.
         studentRecords.forEach(record => {
             const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
             if (pc && !displayRows.some(row => row.courseCode === pc.courseCode)) {
@@ -374,7 +379,7 @@ export const backendAPI = {
         const updatedRecordsArray = [...currentRecords];
 
         if (recordID) {
-            updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks };
+            updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks: gradeRemarks || null };
             const { error } = await supabase.from('ACADEMIC_RECORD').update({ finalGrade, isFailed, gradeRemarks }).eq('recordID', recordID);
             if (error) return { recordsData: null, standingsData: null, error: error.message };
             const index = updatedRecordsArray.findIndex(r => r.recordID === recordID);
@@ -383,22 +388,22 @@ export const backendAPI = {
             const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
             if (!pc) return { recordsData: null, standingsData: null, error: "Course not found in curriculum." };
             updatedRecord = {
-                recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks, dateEncoded: new Date().toISOString().split('T')[0],
+                recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks: gradeRemarks || null, dateEncoded: new Date().toISOString().split('T')[0],
                 programCourseID: pc.programCourseID, termID: activeTerm, studentID: student.studentID, userID
             };
-            const { error } = await supabase.from('ACADEMIC_RECORD').insert([{ ...updatedRecord }]);
+            const { error } = await supabase.from('ACADEMIC_RECORD').insert([{ ...updatedRecord, gradeRemarks }]);
             if (error) return { recordsData: null, standingsData: null, error: error.message };
             updatedRecordsArray.push(updatedRecord);
         }
 
-        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(student.studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
+        const { newStandings, updatedStandingsArray } = cascadeStandings(student.studentID, updatedRecordsArray, programCourses, courses, program, currentStandings, terms, activeTerm);
 
-        // FIXED: Cast as string to appease TS
-        const dbStanding = {
-            ...newStanding,
-            termAcademicStatus: (newStanding.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
-        };
-        const { error: standError } = await supabase.from('TERM_STANDING').upsert([dbStanding], { onConflict: 'standingID' });
+        const dbStandings = newStandings.map(ns => ({
+            ...ns,
+            termAcademicStatus: (ns.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : ns.termAcademicStatus
+        }));
+
+        const { error: standError } = await supabase.from('TERM_STANDING').upsert(dbStandings, { onConflict: 'standingID' });
         if (standError) return { recordsData: null, standingsData: null, error: standError.message };
 
         return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, error: null };
@@ -413,14 +418,13 @@ export const backendAPI = {
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
 
-        const { newStanding, updatedStandingsArray } = evaluateAndApplyStanding(studentID, activeTerm, updatedRecordsArray, programCourses, courses, program, currentStandings, terms);
+        const { newStandings, updatedStandingsArray } = cascadeStandings(studentID, updatedRecordsArray, programCourses, courses, program, currentStandings, terms, activeTerm);
 
-        // FIXED: Cast as string to appease TS
-        const dbStanding = {
-            ...newStanding,
-            termAcademicStatus: (newStanding.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : newStanding.termAcademicStatus
-        };
-        await supabase.from('TERM_STANDING').upsert([dbStanding], { onConflict: 'standingID' });
+        const dbStandings = newStandings.map(ns => ({
+            ...ns,
+            termAcademicStatus: (ns.termAcademicStatus as string) === 'Advised to Shift' ? 'Advised-to-Shift' : ns.termAcademicStatus
+        }));
+        await supabase.from('TERM_STANDING').upsert(dbStandings, { onConflict: 'standingID' });
 
         return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, error: null };
     },
@@ -429,7 +433,7 @@ export const backendAPI = {
         const baseStudent = {
             studentID: newStudent.studentID,
             studFirstName: newStudent.studFirstName,
-            studMiddleName: newStudent.studMiddleName,
+            studMiddleName: newStudent.studMiddleName || null,
             studLastName: newStudent.studLastName,
             shsTrack: newStudent.shsTrack,
             yearLevel: newStudent.yearLevel,
@@ -455,7 +459,7 @@ export const backendAPI = {
     async updateStudent(updatedData: EnrichedStudent, currentStudents: EnrichedStudent[]) {
         const baseStudent = {
             studFirstName: updatedData.studFirstName,
-            studMiddleName: updatedData.studMiddleName,
+            studMiddleName: updatedData.studMiddleName || null,
             studLastName: updatedData.studLastName,
             shsTrack: updatedData.shsTrack,
             yearLevel: updatedData.yearLevel,
@@ -542,10 +546,19 @@ export const backendAPI = {
         return null;
     },
 
+    // REVISION 1 (Prerequisite Validation): Strictly splits arrays, validates existence, and wipes old data to prevent duplication.
     async saveCourseToCurriculum(
-        payload: { courseCode: string; title: string; units: string; yearLevel: string; semester: string; classification: string; isCQPAIncluded: boolean; },
-        program: DEGREE_PROGRAM, editingCourseCode: string | null, courses: COURSE[], programCourses: PROGRAM_COURSE[]
+        payload: { courseCode: string; title: string; units: string; yearLevel: string; semester: string; classification: string; isCQPAIncluded: boolean; prerequisites: string; },
+        program: DEGREE_PROGRAM, editingCourseCode: string | null, courses: COURSE[], programCourses: PROGRAM_COURSE[], currentPrereqs: COURSE_PREREQUISITE[]
     ) {
+        // Validation Check: Prevent insertion if any typed prerequisite does not actually exist in the global COURSE table
+        const prereqCodes = payload.prerequisites.split(',').map(s => s.trim().toUpperCase()).filter(s => s !== "");
+        for (const code of prereqCodes) {
+            if (!courses.some(c => c.courseCode === code)) {
+                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: Course '${code}' does not exist in the institutional database.` };
+            }
+        }
+
         const baseCourse: COURSE = { courseCode: payload.courseCode, courseTitle: payload.title, courseUnits: Number(payload.units) };
 
         const progCourseDB = {
@@ -576,7 +589,54 @@ export const backendAPI = {
 
         const newProgCourses = editingCourseCode ? programCourses.map(pc => pc.programCourseID === progCourseFrontend.programCourseID ? progCourseFrontend : pc) : [...programCourses, progCourseFrontend];
 
-        return { coursesData: newCourses, programCoursesData: newProgCourses, error: null };
+        const finalProgCourseID = progCourseDB.programCourseID;
+
+        // Wipe old prerequisite relationships to prevent duplication on edit
+        await supabase.from('COURSE_PREREQUISITE').delete().eq('programCourseID', finalProgCourseID);
+
+        const newPrereqs: COURSE_PREREQUISITE[] = [];
+        for (const code of prereqCodes) {
+            const prereqPC = newProgCourses.find(pc => pc.programCode === program.programCode && pc.courseCode === code);
+            if (prereqPC) {
+                newPrereqs.push({ prereqID: generateID('PR-'), programCourseID: finalProgCourseID, prereqProgramCourseID: prereqPC.programCourseID });
+            }
+        }
+
+        if (newPrereqs.length > 0) {
+            const { error: prError } = await supabase.from('COURSE_PREREQUISITE').insert(newPrereqs);
+            if (prError) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: prError.message };
+        }
+
+        const filteredPrereqs = currentPrereqs.filter(pr => pr.programCourseID !== finalProgCourseID);
+        const updatedPrereqs = [...filteredPrereqs, ...newPrereqs];
+
+        return { coursesData: newCourses, programCoursesData: newProgCourses, coursePrerequisitesData: updatedPrereqs, error: null };
+    },
+
+    // INSIDE export const backendAPI = { ... }
+
+    async deleteCourseFromCurriculum(
+        programCode: string, courseCode: string, programCourses: PROGRAM_COURSE[], currentPrereqs: COURSE_PREREQUISITE[]
+    ) {
+        const targetPC = programCourses.find(pc => pc.programCode === programCode && pc.courseCode === courseCode);
+        if (!targetPC) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: "Curriculum mapping not found in database." };
+
+        // 1. Wipe associated prerequisites first to prevent Foreign Key constraint violations
+        await supabase.from('COURSE_PREREQUISITE').delete().eq('programCourseID', targetPC.programCourseID);
+        await supabase.from('COURSE_PREREQUISITE').delete().eq('prereqProgramCourseID', targetPC.programCourseID);
+
+        // 2. Delete the actual program course mapping
+        const { error } = await supabase.from('PROGRAM_COURSE').delete().eq('programCourseID', targetPC.programCourseID);
+
+        if (error) {
+            if (error.code === '23503') return { programCoursesData: null, coursePrerequisitesData: null, error: "Cannot delete this course because student academic records are actively tied to it." };
+            return { programCoursesData: null, coursePrerequisitesData: null, error: error.message };
+        }
+
+        const updatedProgramCourses = programCourses.filter(pc => pc.programCourseID !== targetPC.programCourseID);
+        const updatedPrereqs = currentPrereqs.filter(pr => pr.programCourseID !== targetPC.programCourseID && pr.prereqProgramCourseID !== targetPC.programCourseID);
+
+        return { programCoursesData: updatedProgramCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
     async generateReport(
