@@ -152,13 +152,14 @@ export default function Evaluator() {
         let isMounted = true;
         const fetchBackendData = async () => {
             setIsLoading(true);
-            const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm);
-            const prog = await backendAPI.getCurriculumProgress(selectedStudent, activeTerm, programCourses, records);
+            // FIXED: Passing retentionPolicies to both calls
+            const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies);
+            const prog = await backendAPI.getCurriculumProgress(selectedStudent, activeTerm, programCourses, records, retentionPolicies);
             if (isMounted) { setDisplayRows(rows); setProgressStats(prog); setIsLoading(false); }
         };
         void fetchBackendData();
         return () => { isMounted = false; };
-    }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm]);
+    }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies]);
 
     const handleIDChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let val = e.target.value.replace(/\D/g, '');
@@ -518,13 +519,16 @@ export default function Evaluator() {
                                                                 if (displayRows.some(r => r.courseCode === pc.courseCode)) return false;
                                                                 if (!pc.courseCode.toLowerCase().includes(courseSearch.toLowerCase())) return false;
 
-                                                                // FIXED: Historical Exclusions. Scans entire DB to block Passed subjects and INCs.
+                                                                // FIXED: Add Subject historical exclusions dynamically read cohort policy
+                                                                const cohortPolicy = retentionPolicies.find(p => p.programCode === selectedStudent?.programCode && p.effectiveYear === selectedStudent?.yearEnrolled);
+                                                                const passThreshold = cohortPolicy ? (pc.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
+
                                                                 const studentHistory = records.filter(r => r.studentID === selectedStudent?.studentID && r.programCourseID === pc.programCourseID);
                                                                 for (const histRec of studentHistory) {
                                                                     if (histRec.gradeRemarks === 'INC') return false;
-                                                                    if (histRec.finalGrade !== null && histRec.finalGrade >= 1.0) return false; // Passed (Silliman Scale: >= 1.0)
+                                                                    if (histRec.finalGrade !== null && histRec.finalGrade >= passThreshold) return false;
                                                                 }
-                                                                return true; // W, NG, D, F, or completely untaken subjects pass through
+                                                                return true;
                                                             }).map(pc => (
                                                                 <button key={pc.courseCode} onClick={() => handleAddExtraCourse(pc.courseCode)} className="flex w-full items-center justify-between border-b border-slate-50 dark:border-slate-700/50 px-4 py-2 text-left text-sm hover:bg-blue-50 dark:hover:bg-blue-900/30 transition">
                                                                     <span className="font-bold text-slate-800 dark:text-slate-200">{pc.courseCode}</span>

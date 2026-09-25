@@ -350,36 +350,44 @@ export const backendAPI = {
     async getEnrichedGrades(
         student: EnrichedStudent | null, activeTerm: string, termDetails: ACADEMIC_TERM | undefined,
         programCourses: PROGRAM_COURSE[], courses: COURSE[], records: ACADEMIC_RECORD[],
-        prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[], globalActiveTermID: string
+        prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[], globalActiveTermID: string,
+        retentionPolicies: RETENTION_POLICY[] // FIXED: Added policy integration
     ) {
         if (!student || !termDetails) return [];
         const studentRecords = records.filter(r => r.studentID === student.studentID && r.termID === activeTerm);
         const displayRows: EnrichedGradeRow[] = [];
 
-        // FIXED: Fully process prerequisites for encoded/auto-populated records instead of hardcoding false
+        const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
+
+        // FIXED: Universal prerequisite evaluator that checks grades against cohort-specific thresholds
+        const checkPassed = (prereqID: string) => {
+            return records.find(hr => {
+                if (hr.studentID !== student.studentID || hr.termID >= activeTerm) return false;
+                if (hr.programCourseID !== prereqID) return false;
+                if (hr.isFailed) return false;
+                if (hr.finalGrade === null) return false;
+
+                const prereqPc = programCourses.find(p => p.programCourseID === hr.programCourseID);
+                const passMark = cohortPolicy ? (prereqPc?.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
+                return hr.finalGrade >= passMark;
+            });
+        };
+
         studentRecords.forEach(record => {
             const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
             if (pc && !displayRows.some(row => row.courseCode === pc.courseCode)) {
                 const baseCourse = courses.find(c => c.courseCode === pc.courseCode);
-
                 let isMissingPrereq = false;
                 const coursePrereqs = prereqs.filter(pr => pr.programCourseID === pc.programCourseID);
+
                 if (coursePrereqs.length > 0) {
-                    const historicalRecords = records.filter(r => r.studentID === student.studentID && r.termID < activeTerm);
-                    coursePrereqs.forEach(pr => {
-                        const passed = historicalRecords.find(hr => hr.programCourseID === pr.prereqProgramCourseID && !hr.isFailed && hr.finalGrade !== null);
-                        if (!passed) isMissingPrereq = true;
-                    });
+                    coursePrereqs.forEach(pr => { if (!checkPassed(pr.prereqProgramCourseID)) isMissingPrereq = true; });
                 }
 
                 displayRows.push({
-                    courseCode: pc.courseCode,
-                    courseTitle: baseCourse?.courseTitle || "Unknown",
-                    courseUnits: baseCourse?.courseUnits || 0,
-                    isMissingPrereq,
-                    finalGrade: record.finalGrade !== null ? (record.finalGrade === 0 ? "F" : record.finalGrade.toString()) : (record.gradeRemarks || ""),
-                    isBlank: record.finalGrade === null && !record.gradeRemarks,
-                    recordID: record.recordID
+                    courseCode: pc.courseCode, courseTitle: baseCourse?.courseTitle || "Unknown", courseUnits: baseCourse?.courseUnits || 0,
+                    isMissingPrereq, finalGrade: record.finalGrade !== null ? (record.finalGrade === 0 ? "F" : record.finalGrade.toString()) : (record.gradeRemarks || ""),
+                    isBlank: record.finalGrade === null && !record.gradeRemarks, recordID: record.recordID
                 });
             }
         });
@@ -390,47 +398,39 @@ export const backendAPI = {
             curriculum.forEach(pc => {
                 if (!displayRows.some(row => row.courseCode === pc.courseCode) && !dismissedCourses.includes(pc.courseCode)) {
                     const baseCourse = courses.find(c => c.courseCode === pc.courseCode);
-
                     let isMissingPrereq = false;
                     const coursePrereqs = prereqs.filter(pr => pr.programCourseID === pc.programCourseID);
+
                     if (coursePrereqs.length > 0) {
-                        const historicalRecords = records.filter(r => r.studentID === student.studentID && r.termID < activeTerm);
-                        coursePrereqs.forEach(pr => {
-                            const passed = historicalRecords.find(hr => hr.programCourseID === pr.prereqProgramCourseID && !hr.isFailed && hr.finalGrade !== null);
-                            if (!passed) isMissingPrereq = true;
-                        });
+                        coursePrereqs.forEach(pr => { if (!checkPassed(pr.prereqProgramCourseID)) isMissingPrereq = true; });
                     }
 
                     displayRows.push({
-                        courseCode: pc.courseCode,
-                        courseTitle: baseCourse?.courseTitle || "Unknown",
-                        courseUnits: baseCourse?.courseUnits || 0,
-                        isMissingPrereq,
-                        finalGrade: "",
-                        isBlank: true,
-                        recordID: undefined
+                        courseCode: pc.courseCode, courseTitle: baseCourse?.courseTitle || "Unknown", courseUnits: baseCourse?.courseUnits || 0,
+                        isMissingPrereq, finalGrade: "", isBlank: true, recordID: undefined
                     });
                 }
             });
         }
-
         return displayRows;
     },
 
     async getCurriculumProgress(
-        student: EnrichedStudent | null, activeTerm: string, programCourses: PROGRAM_COURSE[], records: ACADEMIC_RECORD[]
+        student: EnrichedStudent | null, activeTerm: string, programCourses: PROGRAM_COURSE[],
+        records: ACADEMIC_RECORD[], retentionPolicies: RETENTION_POLICY[] // FIXED: Added
     ) {
         if (!student) return { completed: [], enrolled: [], remaining: [] };
         const curriculum = programCourses.filter(pc => pc.programCode === student.programCode);
         const studentRecords = records.filter(r => r.studentID === student.studentID);
+        const policy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
 
-        const completed: PROGRAM_COURSE[] = [];
-        const enrolled: PROGRAM_COURSE[] = [];
-        const remaining: PROGRAM_COURSE[] = [];
+        const completed: PROGRAM_COURSE[] = []; const enrolled: PROGRAM_COURSE[] = []; const remaining: PROGRAM_COURSE[] = [];
 
         curriculum.forEach(pc => {
             const history = studentRecords.filter(r => r.programCourseID === pc.programCourseID);
-            const passed = history.find(r => r.finalGrade !== null && !r.isFailed);
+            const passMark = policy ? (pc.majorMinorClassif === 'Major' ? policy.majorPassingGrade : policy.minorPassingGrade) : 1.0;
+
+            const passed = history.find(r => r.finalGrade !== null && r.finalGrade >= passMark && !r.isFailed);
             const active = history.find(r => r.termID === activeTerm && r.finalGrade === null && !r.gradeRemarks);
 
             if (passed) completed.push(pc);
@@ -498,30 +498,31 @@ export const backendAPI = {
     async upsertGrade(
         courseCode: string, val: string, recordID: string | undefined, student: EnrichedStudent, activeTerm: string,
         currentRecords: ACADEMIC_RECORD[], programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-        currentStandings: TERM_STANDING[], userID: string, terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[] // ADDED PARAMETER
+        currentStandings: TERM_STANDING[], userID: string, terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[]
     ) {
-        let finalGrade: number | null = null;
-        let gradeRemarks: string | null = null;
-        let isFailed = false;
+        let finalGrade: number | null = null; let gradeRemarks: string | null = null; let isFailed = false;
 
         const upperVal = val.trim().toUpperCase();
 
+        const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
+        const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
+        const threshold = cohortPolicy ? (pc?.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
+
         if (upperVal === "") {
-            finalGrade = null;
-            gradeRemarks = null;
+            finalGrade = null; gradeRemarks = null;
         } else if (upperVal === "F") {
-            finalGrade = 0.0;
-            isFailed = true;
+            finalGrade = 0.0; isFailed = true;
         } else if (["INC", "NG", "W", "D"].includes(upperVal)) {
             gradeRemarks = upperVal;
             if (["NG", "D"].includes(upperVal)) isFailed = true;
         } else {
             const parsedGrade = Number(upperVal);
             if (isNaN(parsedGrade) || parsedGrade < 0.0 || parsedGrade > 4.0) {
-                return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a valid numerical grade between 0.0 and 4.0, or a valid remark (INC, NG, W, D, F)." };
+                return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a numerical grade between 0.0 and 4.0, or a valid remark." };
             }
             finalGrade = parsedGrade;
-            if (finalGrade === 0.0) isFailed = true;
+            // FIXED: Dynamically triggers failure in DB if grade is below the cohort policy threshold
+            if (finalGrade < threshold) isFailed = true;
         }
 
         let updatedRecord: ACADEMIC_RECORD;
