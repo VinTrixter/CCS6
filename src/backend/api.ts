@@ -823,27 +823,32 @@ export const backendAPI = {
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
         students: EnrichedStudent[], activeStandings: TERM_STANDING[]
     ) {
-        const data = students.map(student => {
-            const ts = activeStandings.find(t => t.studentID === student.studentID);
+        // FIXED: The report now strictly maps over the standings of the specific term.
+        // It will no longer blindly display every student in the database.
+        const data = activeStandings.map(ts => {
+            const student = students.find(s => s.studentID === ts.studentID);
+            if (!student) return null;
             return {
-                standingID: ts?.standingID || `TEMP-${student.studentID}`,
-                termQPA: ts?.termQPA || 0,
-                semCQPA: ts?.semCQPA || 0,
-                termAcademicStatus: ts?.termAcademicStatus || "Unencoded",
-                isConsecutiveOP: ts?.isConsecutiveOP || false,
-                studentID: student.studentID,
-                termID: ts?.termID || "N/A",
+                standingID: ts.standingID,
+                termQPA: ts.termQPA,
+                semCQPA: ts.semCQPA,
+                termAcademicStatus: ts.termAcademicStatus,
+                isConsecutiveOP: ts.isConsecutiveOP,
+                studentID: ts.studentID,
+                termID: ts.termID,
                 student: student
             };
-        });
+        }).filter(item => item !== null);
 
         const filtered = data.filter(record => {
+            // record is guaranteed non-null here due to the filter above
             const matchStatus = statusFilter === "All Students" ||
-                (statusFilter === "All Flagged" && (record.termAcademicStatus === "On-Probation" || record.termAcademicStatus === "Advised to Shift")) ||
-                record.termAcademicStatus === statusFilter;
-            const matchProgram = programFilter === "All" || record.student.programCode === programFilter;
-            const matchYear = yearFilter === "All" || record.student.yearLevel.toString() === yearFilter;
-            const matchAccount = accountFilter === "All" || record.student.accountStatus === accountFilter;
+                (statusFilter === "All Flagged" && (record!.termAcademicStatus === "On-Probation" || record!.termAcademicStatus === "Advised to Shift")) ||
+                record!.termAcademicStatus === statusFilter;
+            const matchProgram = programFilter === "All" || record!.student.programCode === programFilter;
+            const matchYear = yearFilter === "All" || record!.student.yearLevel.toString() === yearFilter;
+            const matchAccount = accountFilter === "All" || record!.student.accountStatus === accountFilter;
+
             return matchStatus && matchProgram && matchYear && matchAccount;
         });
 
