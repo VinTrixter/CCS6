@@ -19,7 +19,6 @@ export interface EnrichedGradeRow {
     recordID?: string;
 }
 
-// FIXED: Added maxLength limiter to satisfy strict database constraints for PC- and PR- IDs (TC 42)
 const generateID = (prefix: string, maxLength: number = 10) => {
     return `${prefix}${Math.random().toString(36).substring(2, 9).toUpperCase()}`.substring(0, maxLength);
 };
@@ -40,7 +39,7 @@ const cascadeStandings = (
     currentStandings: TERM_STANDING[],
     terms: ACADEMIC_TERM[],
     modifiedTermID: string,
-    skipYearLevelAutoCalc: boolean = false // FIXED: Prevents grade edits from overwriting manual year level overrides
+    skipYearLevelAutoCalc: boolean = false
 ) => {
     const studentTermIDs = new Set(updatedRecords.filter(r => r.studentID === student.studentID).map(r => r.termID));
     studentTermIDs.add(modifiedTermID);
@@ -77,7 +76,6 @@ const cascadeStandings = (
 
         const existingStanding = currentStandings.find(ts => ts.studentID === student.studentID && ts.termID === activeTerm);
 
-        // FIXED: Earliest Major Engine defaults to chronological math for past terms if no snapshot exists
         let evaluatedYearLevel = existingStanding?.yearLevel;
         if (!evaluatedYearLevel) {
             if (activeTermObj.isCurrent) {
@@ -194,7 +192,8 @@ const cascadeStandings = (
 export const backendAPI = {
     getManualReviewList(
         standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string,
-        activeUser: COMPASS_USER | null, records?: ACADEMIC_RECORD[], terms?: ACADEMIC_TERM[]
+        activeUser: COMPASS_USER | null, records?: ACADEMIC_RECORD[], terms?: ACADEMIC_TERM[],
+        students?: EnrichedStudent[] // FIXED: Added students array parameter for orphaned account scanning
     ): MANUAL_REVIEW_ITEM[] {
         const safeStandings = standings || [];
         const safeRemarks = remarks || [];
@@ -247,6 +246,30 @@ export const backendAPI = {
                 });
             }
         }
+
+        // FIXED: Phase 3 Engine automatically flags students unassigned by a Soft-Deleted Curriculum
+        if (students) {
+            students.forEach(student => {
+                if (student.accountStatus === 'Active' && student.programCode === "Unassigned") {
+                    const existingIndex = reviewItems.findIndex(r => r.studentID === student.studentID);
+                    if (existingIndex === -1) {
+                        reviewItems.push({
+                            standingID: `ORPHAN-${student.studentID}`,
+                            termQPA: 0,
+                            semCQPA: 0,
+                            termAcademicStatus: 'Unencoded',
+                            isConsecutiveOP: false,
+                            yearLevel: student.yearLevel,
+                            studentID: student.studentID,
+                            termID: activeTerm,
+                            issueDescription: "Curriculum Missing / Unassigned",
+                            targetTermID: activeTerm
+                        } as MANUAL_REVIEW_ITEM);
+                    }
+                }
+            });
+        }
+
         return reviewItems;
     },
 
@@ -484,7 +507,6 @@ export const backendAPI = {
         programCourses: PROGRAM_COURSE[], records: ACADEMIC_RECORD[], userID: string,
         globalActiveTerm: string, standings: TERM_STANDING[]
     ) {
-        // FIXED: Context-Aware Baseline Year Level ensures we fetch the chronologically accurate curriculum for past terms
         let targetYearLevel = student.yearLevel;
         if (!termDetails.isCurrent) {
             const exist = standings.find(s => s.studentID === student.studentID && s.termID === activeTerm);
@@ -590,7 +612,6 @@ export const backendAPI = {
         let updatedRecord: ACADEMIC_RECORD;
         const updatedRecordsArray = [...currentRecords];
 
-        // FIXED: Determines if action is an edit. If so, skips auto-calculating year level to preserve overrides.
         const skipYearLevelAutoCalc = !!recordID;
 
         if (recordID) {
@@ -786,18 +807,6 @@ export const backendAPI = {
         return { data: remarks.filter(r => r.remarkID !== remarkID), error: null };
     },
 
-    async validateCurriculum(programCode: string, curriculumYear: string, editingProgCode: string | null, programs: DEGREE_PROGRAM[]) {
-        const exists = programs.some(p => p.programCode === programCode && p.curriculumYear === curriculumYear && p.programCode !== editingProgCode);
-        if (exists) return "A curriculum for this program and effective year already exists.";
-
-        if (editingProgCode) {
-            await supabase.from('DEGREE_PROGRAM').update({ programCode, curriculumYear }).eq('programCode', editingProgCode);
-        } else {
-            await supabase.from('DEGREE_PROGRAM').insert([{ programCode, curriculumYear, programTitle: "New Program" }]);
-        }
-        return null;
-    },
-
     async saveCourseToCurriculum(
         payload: { courseCode: string; title: string; units: string; yearLevel: string; semester: string; classification: string; isCQPAIncluded: boolean; prerequisites: string; },
         program: DEGREE_PROGRAM, editingCourseCode: string | null, courses: COURSE[], programCourses: PROGRAM_COURSE[], currentPrereqs: COURSE_PREREQUISITE[]
@@ -806,7 +815,6 @@ export const backendAPI = {
 
         const newPrereqs: COURSE_PREREQUISITE[] = [];
 
-        // FIXED: Explicitly set maxLength to 7 to satisfy database schema bounds (TC 42)
         const progCourseDB = {
             programCourseID: editingCourseCode ? programCourses.find(pc => pc.courseCode === editingCourseCode && pc.programCode === program.programCode)!.programCourseID : generateID('PC-', 7),
             programCode: program.programCode,
@@ -841,7 +849,6 @@ export const backendAPI = {
                 return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: A course cannot be a prerequisite for itself.` };
             }
 
-            // FIXED: Strict Chronological Prerequisite checking prevents timeline paradoxes
             const targetYear = Number(payload.yearLevel);
             const targetSemWeight = payload.semester === "1st Semester" ? 1 : payload.semester === "2nd Semester" ? 2 : 3;
 
@@ -852,7 +859,6 @@ export const backendAPI = {
                 return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: ${rawCode} is scheduled in Year ${prereqYear}, ${match.termSem}. Prerequisites must logically precede the target course.` };
             }
 
-            // FIXED: Explicitly set maxLength to 7 to satisfy database schema bounds
             newPrereqs.push({ prereqID: generateID('PR-', 7), programCourseID: progCourseDB.programCourseID, prereqProgramCourseID: match.programCourseID });
         }
 
@@ -913,6 +919,89 @@ export const backendAPI = {
         return { programCoursesData: updatedProgramCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
+    async validateCurriculum(
+        programCode: string,
+        curriculumYear: string,
+        editingProgCode: string | null,
+        programs: DEGREE_PROGRAM[]
+    ) {
+        const exists = programs.some(p =>
+            p.programCode === programCode &&
+            p.curriculumYear === curriculumYear &&
+            p.programCode !== editingProgCode
+        );
+
+        if (exists) return "A curriculum for this program and effective year already exists.";
+        return null;
+    },
+
+    async saveProgram(
+        program: DEGREE_PROGRAM,
+        editingProgCode: string | null,
+        programs: DEGREE_PROGRAM[]
+    ) {
+        const normalizedCode = program.programCode.trim().toUpperCase();
+        const normalizedTitle = program.programTitle.trim();
+
+        if (!normalizedCode || !normalizedTitle) {
+            return { data: null, error: "Program code and title are required." };
+        }
+
+        const validationError = await this.validateCurriculum(
+            normalizedCode,
+            program.curriculumYear,
+            editingProgCode,
+            programs
+        );
+
+        if (validationError) {
+            return { data: null, error: validationError };
+        }
+
+        if (editingProgCode) {
+            const { error } = await supabase
+                .from("DEGREE_PROGRAM")
+                .update({
+                    programCode: normalizedCode,
+                    programTitle: normalizedTitle,
+                    curriculumYear: program.curriculumYear
+                })
+                .eq("programCode", editingProgCode);
+
+            if (error) return { data: null, error: error.message };
+
+            return {
+                data: programs.map(p =>
+                    p.programCode === editingProgCode
+                        ? {
+                            ...p,
+                            programCode: normalizedCode,
+                            programTitle: normalizedTitle,
+                            curriculumYear: program.curriculumYear
+                        }
+                        : p
+                ),
+                error: null
+            };
+        }
+
+        const { error } = await supabase
+            .from("DEGREE_PROGRAM")
+            .insert([{
+                programCode: normalizedCode,
+                programTitle: normalizedTitle,
+                curriculumYear: program.curriculumYear
+            }]);
+
+        if (error) return { data: null, error: error.message };
+
+        return {
+            data: [...programs, { ...program, programCode: normalizedCode, programTitle: normalizedTitle }],
+            error: null
+        };
+    },
+
+    // FIXED: Phase 2 Soft Deletion Engine prevents destructive wipes to historical student records
     async deleteProgramAndUniqueCourses(
         programCode: string,
         programs: DEGREE_PROGRAM[],
@@ -920,97 +1009,39 @@ export const backendAPI = {
         currentPrereqs: COURSE_PREREQUISITE[],
         courses: COURSE[]
     ) {
-        const targetProgramCourses = programCourses.filter(pc => pc.programCode === programCode);
-        const targetProgramCourseIDs = targetProgramCourses.map(pc => pc.programCourseID);
+        // FIXED: Automatically unassign affected students via the database
+        const { error: orphanError } = await supabase
+            .from("STUDENT_PROGRAM")
+            .update({ programCode: "Unassigned" })
+            .eq("programCode", programCode);
 
-        if (targetProgramCourseIDs.length === 0) {
-            const { error: programError } = await supabase.from('DEGREE_PROGRAM').delete().eq('programCode', programCode);
-            if (programError) {
-                return { programsData: null, programCoursesData: null, coursePrerequisitesData: null, coursesData: null, error: programError.message };
-            }
-
+        if (orphanError) {
             return {
-                programsData: programs.filter(p => p.programCode !== programCode),
-                programCoursesData: programCourses.filter(pc => pc.programCode !== programCode),
-                coursePrerequisitesData: currentPrereqs.filter(
-                    pr => !targetProgramCourseIDs.includes(pr.programCourseID) && !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
-                ),
-                coursesData: courses,
-                error: null
+                programsData: null, programCoursesData: null, coursePrerequisitesData: null, coursesData: null,
+                error: "Failed to safely unassign enrolled students: " + orphanError.message
             };
         }
 
-        const normalizeCode = (code: string) => code.replace(/\s+/g, "").toUpperCase();
-        const otherProgramCourseCodes = new Set(
-            programCourses
-                .filter(pc => pc.programCode !== programCode)
-                .map(pc => normalizeCode(pc.courseCode))
-        );
+        // FIXED: Apply Soft Deletion via isArchived status
+        const { error: programError } = await supabase
+            .from("DEGREE_PROGRAM")
+            .update({ isArchived: true } as any)
+            .eq("programCode", programCode);
 
-        const uniqueCourseCodes = Array.from(new Set(
-            targetProgramCourses
-                .filter(pc => !otherProgramCourseCodes.has(normalizeCode(pc.courseCode)))
-                .map(pc => pc.courseCode)
-        ));
-
-        await supabase.from('COURSE_PREREQUISITE').delete().in('programCourseID', targetProgramCourseIDs);
-        await supabase.from('COURSE_PREREQUISITE').delete().in('prereqProgramCourseID', targetProgramCourseIDs);
-
-        const { error: programCoursesError } = await supabase.from('PROGRAM_COURSE').delete().in('programCourseID', targetProgramCourseIDs);
-        if (programCoursesError) {
-            if (programCoursesError.code === '23503') {
-                return {
-                    programsData: null,
-                    programCoursesData: null,
-                    coursePrerequisitesData: null,
-                    coursesData: null,
-                    error: "Cannot delete this curriculum because academic records are still tied to its course mappings."
-                };
-            }
-            return {
-                programsData: null,
-                programCoursesData: null,
-                coursePrerequisitesData: null,
-                coursesData: null,
-                error: programCoursesError.message
-            };
-        }
-
-        const { error: programError } = await supabase.from('DEGREE_PROGRAM').delete().eq('programCode', programCode);
         if (programError) {
             return {
-                programsData: null,
-                programCoursesData: null,
-                coursePrerequisitesData: null,
-                coursesData: null,
+                programsData: null, programCoursesData: null, coursePrerequisitesData: null, coursesData: null,
                 error: programError.message
             };
         }
 
-        const remainingCourses = courses.filter(
-            course => !uniqueCourseCodes.map(normalizeCode).includes(normalizeCode(course.courseCode))
-        );
-
-        if (uniqueCourseCodes.length > 0) {
-            const { error: courseError } = await supabase.from('COURSE').delete().in('courseCode', uniqueCourseCodes);
-            if (courseError) {
-                return {
-                    programsData: null,
-                    programCoursesData: null,
-                    coursePrerequisitesData: null,
-                    coursesData: null,
-                    error: courseError.message
-                };
-            }
-        }
-
+        // CRITICAL: We intentionally bypass deleting PROGRAM_COURSE, COURSE, and COURSE_PREREQUISITE
+        // to permanently preserve the historical academic records of the unassigned students.
         return {
-            programsData: programs.filter(p => p.programCode !== programCode),
-            programCoursesData: programCourses.filter(pc => pc.programCode !== programCode),
-            coursePrerequisitesData: currentPrereqs.filter(
-                pr => !targetProgramCourseIDs.includes(pr.programCourseID) && !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
-            ),
-            coursesData: remainingCourses,
+            programsData: programs.map(p => p.programCode === programCode ? { ...p, isArchived: true } as DEGREE_PROGRAM : p),
+            programCoursesData: programCourses,
+            coursePrerequisitesData: currentPrereqs,
+            coursesData: courses,
             error: null
         };
     },
@@ -1025,7 +1056,6 @@ export const backendAPI = {
         const data = students.filter(s => s.yearEnrolled <= targetYear).map(student => {
             const ts = activeStandings.find(st => st.studentID === student.studentID);
 
-            // FIXED: Calculate pure chronological baseline to permanently replace global profile fallback
             const chronologicalYearLevel = Math.max(1, targetYear - student.yearEnrolled + 1);
 
             if (ts) {
@@ -1035,7 +1065,7 @@ export const backendAPI = {
                     semCQPA: ts.semCQPA,
                     termAcademicStatus: ts.termAcademicStatus,
                     isConsecutiveOP: ts.isConsecutiveOP,
-                    yearLevel: ts.yearLevel || chronologicalYearLevel, // Strict fallback to math, not profile
+                    yearLevel: ts.yearLevel || chronologicalYearLevel,
                     studentID: ts.studentID,
                     termID: ts.termID,
                     student: student
@@ -1047,7 +1077,7 @@ export const backendAPI = {
                     semCQPA: 0.0,
                     termAcademicStatus: "Unencoded",
                     isConsecutiveOP: false,
-                    yearLevel: chronologicalYearLevel, // Strict chronological injection for synthetic rows
+                    yearLevel: chronologicalYearLevel,
                     studentID: student.studentID,
                     termID: targetTermDetails.termID,
                     student: student
@@ -1060,7 +1090,6 @@ export const backendAPI = {
                 (statusFilter === "All Flagged" && (record.termAcademicStatus === "On-Probation" || record.termAcademicStatus === "Advised to Shift")) ||
                 record.termAcademicStatus === statusFilter;
             const matchProgram = programFilter === "All" || record.student.programCode === programFilter;
-            // FIXED: Filter natively evaluates the pre-calculated, context-aware yearLevel
             const matchYear = yearFilter === "All" || record.yearLevel.toString() === yearFilter;
             const matchAccount = accountFilter === "All" || record.student.accountStatus === accountFilter;
 

@@ -200,21 +200,21 @@ export default function Settings() {
                 <p className="text-sm text-slate-500 dark:text-slate-400">Manage your profile, system variables, and view security logs.</p>
             </div>
 
-            <div className="flex overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
-                <div className="w-64 shrink-0 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4">
-                    <nav className="flex flex-col gap-2">
-                        <button onClick={() => setActiveTab("profile")} className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "profile" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.UserSearch className="h-4 w-4" /> My Profile</button>
-                        {can('manage_records') && <button onClick={() => setActiveTab("system")} className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "system" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.Settings className="h-4 w-4" /> Environment</button>}
-                        {can('manage_records') && <button onClick={() => setActiveTab("audit")} className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "audit" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.ShieldAlert className="h-4 w-4" /> Audit Ledger</button>}
+            <div className="flex flex-col lg:flex-row overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
+                <div className="w-full lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4">
+                    <nav className="flex flex-row lg:flex-col gap-2 overflow-x-auto">
+                        <button onClick={() => setActiveTab("profile")} className={`flex shrink-0 whitespace-nowrap items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "profile" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.UserSearch className="h-4 w-4" /> My Profile</button>
+                        {can('manage_records') && <button onClick={() => setActiveTab("system")} className={`flex shrink-0 whitespace-nowrap items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "system" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.Settings className="h-4 w-4" /> Environment</button>}
+                        {can('manage_records') && <button onClick={() => setActiveTab("audit")} className={`flex shrink-0 whitespace-nowrap items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "audit" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.ShieldAlert className="h-4 w-4" /> Audit Ledger</button>}
                     </nav>
                 </div>
 
-                <div className="flex-1 p-8 overflow-y-auto">
+                <div className="flex-1 p-5 lg:p-8 overflow-y-auto">
                     {activeTab === "profile" && (
                         <div className="max-w-2xl">
                             <h2 className="mb-6 text-lg font-bold text-slate-800 dark:text-slate-100">Profile Information</h2>
                             <form onSubmit={handleProfileSave} className="flex flex-col gap-5">
-                                <div className="grid grid-cols-2 gap-5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                     <div><label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">First Name</label><input type="text" value={activeUser?.userFirstName || ""} onChange={(e) => activeUser && setActiveUser({...activeUser, userFirstName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2.5 text-sm outline-none focus:border-blue-700 transition-colors" /></div>
                                     <div><label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Last Name</label><input type="text" value={activeUser?.userLastName || ""} onChange={(e) => activeUser && setActiveUser({...activeUser, userLastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2.5 text-sm outline-none focus:border-blue-700 transition-colors" /></div>
                                 </div>
