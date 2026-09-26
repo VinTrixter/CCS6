@@ -1,4 +1,5 @@
 // src/store/types.ts
+
 export interface COMPASS_USER {
     userID: string;
     userName: string;
@@ -17,7 +18,7 @@ export interface STUDENT {
     shsTrack: string;
     yearLevel: number;
     accountStatus: "Active" | "Inactive" | "Graduated";
-    yearEnrolled: number; // ADDED THIS LINE
+    yearEnrolled: number;
 }
 
 export interface STUDENT_PROGRAM {
@@ -71,7 +72,7 @@ export interface ACADEMIC_RECORD {
     termID: string;
     studentID: string;
     userID: string;
-    gradeRemarks: string | null; // FIXED: Explicitly accepts null instead of undefined
+    gradeRemarks: string | null;
 }
 
 export interface TERM_STANDING {
@@ -113,3 +114,9 @@ export interface SYSTEM_SETTINGS {
     probationThreshold: number;
     atsThreshold: number;
 }
+
+// FIXED: Exported a distinct type for the Dashboard review list to carry UI navigation metadata
+export type MANUAL_REVIEW_ITEM = TERM_STANDING & {
+    issueDescription: string;
+    targetTermID: string;
+};

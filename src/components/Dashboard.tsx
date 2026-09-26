@@ -6,7 +6,8 @@ import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
 
 export default function Dashboard() {
-    const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can } = useStore();
+    // FIXED: Extracted setPendingLocalTerm to enable Term Warping navigation
+    const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can, setPendingLocalTerm } = useStore();
     const [showShiftingModal, setShowShiftingModal] = useState(false);
 
     useEffect(() => {
@@ -21,7 +22,6 @@ export default function Dashboard() {
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
     const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
 
-    // FIXED: Implemented centralized filtering logic to permanently sync with Shell.tsx
     const manualReviewList = backendAPI.getManualReviewList(currentTermStandings, remarks, activeTerm, activeUser, records, terms);
 
     const navigateToReport = (filter: string) => {
@@ -29,9 +29,13 @@ export default function Dashboard() {
         setActiveView("reports");
     };
 
-    const navigateToEvaluator = (studentID?: string, isNew: boolean = false) => {
+    // FIXED: Updated navigation function to receive targetTermID and execute Term Warping
+    const navigateToEvaluator = (studentID?: string, targetTermID?: string, isNew: boolean = false) => {
         if (isNew) setPendingEvaluatorAction("new");
-        else if (studentID) setFocusedStudentID(studentID);
+        else if (studentID) {
+            setFocusedStudentID(studentID);
+            if (targetTermID) setPendingLocalTerm(targetTermID);
+        }
         setActiveView("evaluator");
     };
 
@@ -85,13 +89,15 @@ export default function Dashboard() {
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
                                 <th className="px-5 py-4 font-semibold">Semestral QPA</th>
                                 <th className="px-5 py-4 font-semibold">Current Standing</th>
+                                {/* FIXED: Added column to display the specific issue context */}
+                                <th className="px-5 py-4 font-semibold">Issue / Concern</th>
                                 <th className="px-5 py-4 text-right font-semibold">Action</th>
                             </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                             {manualReviewList.map(ts => {
                                 return (
-                                    <tr key={ts.standingID} className="transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                    <tr key={`${ts.standingID}-${ts.targetTermID}`} className="transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                         <td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.studentID}</td>
                                         <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(3)}</td>
                                         <td className="px-5 py-4">
@@ -99,8 +105,10 @@ export default function Dashboard() {
                                               {ts.termAcademicStatus}
                                             </span>
                                         </td>
+                                        {/* FIXED: Rendering metadata string directly from API */}
+                                        <td className="px-5 py-4 text-xs font-semibold text-coral dark:text-red-400">{ts.issueDescription}</td>
                                         <td className="px-5 py-4 text-right">
-                                            <button onClick={() => navigateToEvaluator(ts.studentID)} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400 disabled:opacity-50">
+                                            <button onClick={() => navigateToEvaluator(ts.studentID, ts.targetTermID)} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400 disabled:opacity-50">
                                                 Resolve Profile
                                             </button>
                                         </td>
@@ -108,7 +116,7 @@ export default function Dashboard() {
                                 );
                             })}
                             {manualReviewList.length === 0 && (
-                                <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">All clear. System detected no active compliance violations.</td></tr>
+                                <tr><td colSpan={5} className="p-8 text-center text-slate-400 dark:text-slate-500">All clear. System detected no active compliance violations.</td></tr>
                             )}
                             </tbody>
                         </table>
@@ -118,7 +126,7 @@ export default function Dashboard() {
                 {can('manage_records') && (
                     <div className="flex w-full shrink-0 flex-col gap-3 lg:w-64">
                         <h2 className="font-bold text-slate-800 dark:text-slate-100">Quick Actions</h2>
-                        <button onClick={() => navigateToEvaluator(undefined, true)} className="flex items-center justify-start gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-sky-600 hover:text-sky-600 dark:hover:border-sky-400 dark:hover:text-sky-400">
+                        <button onClick={() => navigateToEvaluator(undefined, undefined, true)} className="flex items-center justify-start gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-sky-600 hover:text-sky-600 dark:hover:border-sky-400 dark:hover:text-sky-400">
                             <I.UserSearch className="h-5 w-5 shrink-0" />
                             <span className="text-sm font-bold">Add New Student</span>
                         </button>

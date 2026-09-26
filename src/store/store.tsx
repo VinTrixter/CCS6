@@ -36,6 +36,7 @@ interface CompassState {
     isDarkMode: boolean;
     pendingSettingsTab: "profile" | "system" | "audit" | null;
     highlightReviewTable: boolean;
+    pendingLocalTerm: string | null; // FIXED: State bridge added for Term Warping
 
     setIsAuthenticated: Dispatch<SetStateAction<boolean>>;
     setActiveUser: Dispatch<SetStateAction<COMPASS_USER | null>>;
@@ -49,7 +50,7 @@ interface CompassState {
     setTerms: Dispatch<SetStateAction<ACADEMIC_TERM[]>>;
     setCoursePrerequisites: Dispatch<SetStateAction<COURSE_PREREQUISITE[]>>;
     setRetentionPolicies: Dispatch<SetStateAction<RETENTION_POLICY[]>>;
-    setSystemSettings: Dispatch<SetStateAction<SYSTEM_SETTINGS | null>>; // ADDED THIS
+    setSystemSettings: Dispatch<SetStateAction<SYSTEM_SETTINGS | null>>;
     setActiveTerm: Dispatch<SetStateAction<string>>;
     setActiveView: Dispatch<SetStateAction<View>>;
     setPendingReportFilter: Dispatch<SetStateAction<string>>;
@@ -58,6 +59,7 @@ interface CompassState {
     setIsDarkMode: Dispatch<SetStateAction<boolean>>;
     setPendingSettingsTab: Dispatch<SetStateAction<"profile" | "system" | "audit" | null>>;
     setHighlightReviewTable: Dispatch<SetStateAction<boolean>>;
+    setPendingLocalTerm: Dispatch<SetStateAction<string | null>>; // FIXED: Setter for Term Warping bridge
     pushAudit: (action: string, target: string) => void;
     can: (permission: string) => boolean;
 }
@@ -67,7 +69,6 @@ const CompassContext = createContext<CompassState | undefined>(undefined);
 export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
 
-    // REVISION: Initialize state directly from the browser's persistent local storage
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
         return localStorage.getItem('compass_auth') === 'true';
     });
@@ -99,8 +100,8 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
     const [pendingSettingsTab, setPendingSettingsTab] = useState<"profile" | "system" | "audit" | null>(null);
     const [highlightReviewTable, setHighlightReviewTable] = useState<boolean>(false);
+    const [pendingLocalTerm, setPendingLocalTerm] = useState<string | null>(null); // FIXED: Instantiated Term Warping bridge
 
-    // REVISION: Synchronize session state to local storage whenever it changes
     useEffect(() => {
         localStorage.setItem('compass_auth', isAuthenticated.toString());
         if (activeUser) {
@@ -127,9 +128,8 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                 setTerms(data.terms);
                 setCoursePrerequisites(data.coursePrerequisites);
                 setAuditLogs(data.auditLogs || []);
-                // FIXED: Populated the retention policies state from the database payload to prevent the Settings WSOD
                 setRetentionPolicies(data.retentionPolicies || []);
-                setSystemSettings(data.systemSettings); // ADDED THIS
+                setSystemSettings(data.systemSettings);
 
                 const currentTerm = data.terms.find(t => t.isCurrent);
                 if (currentTerm) setActiveTerm(currentTerm.termID);
@@ -182,11 +182,13 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             isInitializing, isAuthenticated, activeUser, activeTerm, auditLogs, students,
             programs, courses, programCourses, records, remarks, standings, terms, coursePrerequisites,
             activeView, pendingReportFilter, focusedStudentID, pendingEvaluatorAction,
-            isDarkMode, pendingSettingsTab, highlightReviewTable,retentionPolicies, systemSettings,
+            isDarkMode, pendingSettingsTab, highlightReviewTable, retentionPolicies, systemSettings,
+            pendingLocalTerm, // FIXED: Provided downward
             setRetentionPolicies, setSystemSettings, setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
             setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setCoursePrerequisites, setActiveTerm,
             setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction,
-            setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, pushAudit, can
+            setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, setPendingLocalTerm, // FIXED: Provided downward
+            pushAudit, can
         }}>
             {children}
         </CompassContext.Provider>

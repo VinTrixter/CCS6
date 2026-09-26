@@ -45,7 +45,8 @@ export default function Reports() {
         let isMounted = true;
         const fetchReport = async () => {
             setIsLoading(true);
-            const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings);
+            // FIXED: Passing targetTermDetails unlocks the new chronological mapping engine for unencoded students
+            const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings, targetTermDetails);
             if (isMounted) {
                 if (error) alert(error);
                 if (data) setReportData(data as ReportRecord[]);
@@ -54,7 +55,7 @@ export default function Reports() {
         };
         void fetchReport();
         return () => { isMounted = false; };
-    }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings]);
+    }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails]);
 
     return (
         <div className="flex w-full flex-col p-6 lg:p-8 print:p-0">
@@ -65,10 +66,8 @@ export default function Reports() {
                 </div>
 
                 <div className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm transition-colors">
-                    {/* FIXED: Merged into a single wrap container with proportional minimum flex widths */}
                     <div className="flex flex-wrap items-end gap-3">
 
-                        {/* Term Dropdown (Widest) */}
                         <div className="flex-[2] min-w-[220px] relative" ref={termDropdownRef}>
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Academic Term</label>
                             <button

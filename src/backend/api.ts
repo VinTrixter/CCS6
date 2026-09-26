@@ -3,7 +3,8 @@ import { supabase } from './supabaseClient';
 import type {
     STUDENT, DEGREE_PROGRAM, COURSE, COMPASS_USER,
     PROGRAM_COURSE, TERM_STANDING, ADVISING_REMARK, ACADEMIC_RECORD,
-    COURSE_PREREQUISITE, ACADEMIC_TERM, AUDIT_LOG, RETENTION_POLICY, SYSTEM_SETTINGS
+    COURSE_PREREQUISITE, ACADEMIC_TERM, AUDIT_LOG, RETENTION_POLICY, SYSTEM_SETTINGS,
+    MANUAL_REVIEW_ITEM // FIXED: Imported interface for Dashboard term warping metadata
 } from '../store/types';
 
 export type EnrichedStudent = STUDENT & { programCode: string };
@@ -71,9 +72,8 @@ const cascadeStandings = (
             const rTerm = terms.find(t => t.termID === r.termID);
             return rTerm && compareTerms(rTerm, activeTermObj) <= 0;
         });
-        const historicalRecords = sanitizeRecords(rawHistRecords);
 
-        // Term QPA: Strict average of the active term
+        // Term QPA: Strict average of the active term (Uses termRecords)
         let termPoints = 0; let termUnits = 0;
         termRecords.forEach(record => {
             const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
@@ -86,36 +86,42 @@ const cascadeStandings = (
         });
         const termQPA = termUnits > 0 ? (termPoints / termUnits) : 0.0;
 
-        // CQPA: Implements Highest-Grade Replacement for Retakes
+        // FIXED: CQPA Implements Highest-Grade Replacement for Retakes
+        // Directly evaluates raw historical records using a normalized code key to ensure old failures are eclipsed.
         const highestGradeMap = new Map<string, number>();
-        historicalRecords.forEach(record => {
+        rawHistRecords.forEach(record => {
             const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
             if (pc && pc.isCQPAIncluded && record.finalGrade !== null) {
-                const existingGrade = highestGradeMap.get(pc.courseCode);
+                const normalizedCode = pc.courseCode.replace(/\s+/g, "").toUpperCase();
+                const existingGrade = highestGradeMap.get(normalizedCode);
                 if (existingGrade === undefined || record.finalGrade > existingGrade) {
-                    highestGradeMap.set(pc.courseCode, record.finalGrade);
+                    highestGradeMap.set(normalizedCode, record.finalGrade);
                 }
             }
         });
 
         let cqpaPoints = 0; let cqpaUnits = 0;
-        highestGradeMap.forEach((highestGrade, courseCode) => {
-            const baseCourse = courses.find(c => c.courseCode === courseCode);
+        highestGradeMap.forEach((highestGrade, normalizedCode) => {
+            const baseCourse = courses.find(c => c.courseCode.replace(/\s+/g, "").toUpperCase() === normalizedCode);
             const units = baseCourse ? baseCourse.courseUnits : 3;
             cqpaPoints += (highestGrade * units);
             cqpaUnits += units;
         });
         const semCQPA = cqpaUnits > 0 ? (cqpaPoints / cqpaUnits) : 0.0;
 
-        // Major 2-Strike Counter
+        // FIXED: Major 2-Strike Counter accurately detects numerical and remark-based failures
         let majorStrikeTriggered = false;
         const majorFailures = new Map<string, number>();
-        historicalRecords.forEach(r => {
+        rawHistRecords.forEach(r => {
             const pc = programCourses.find(p => p.programCourseID === r.programCourseID);
-            if (pc && pc.majorMinorClassif === 'Major' && r.finalGrade !== null) {
-                if (r.finalGrade < majorThreshold) {
-                    majorFailures.set(pc.courseCode, (majorFailures.get(pc.courseCode) || 0) + 1);
-                    if (majorFailures.get(pc.courseCode)! >= 2) {
+            if (pc && pc.majorMinorClassif === 'Major') {
+                const isNumericalFail = r.finalGrade !== null && r.finalGrade < majorThreshold;
+                const isRemarkFail = r.finalGrade === null && r.isFailed; // E.g., NG, D
+
+                if (isNumericalFail || isRemarkFail) {
+                    const normalizedCode = pc.courseCode.replace(/\s+/g, "").toUpperCase();
+                    majorFailures.set(normalizedCode, (majorFailures.get(normalizedCode) || 0) + 1);
+                    if (majorFailures.get(normalizedCode)! >= 2) {
                         majorStrikeTriggered = true;
                     }
                 }
@@ -139,7 +145,6 @@ const cascadeStandings = (
         } else if (majorStrikeTriggered) {
             status = "Advised to Shift";
         } else {
-            // FIXED: Standing evaluates CQPA against global boundaries, ignoring TQPA
             if (semCQPA < systemSettings.atsThreshold) {
                 status = "Advised to Shift";
             } else if (semCQPA < systemSettings.probationThreshold) {
@@ -166,23 +171,28 @@ const cascadeStandings = (
 };
 
 export const backendAPI = {
-    // FIXED: Added optional records and terms parameters to support expired INC scanning
+    // FIXED: Maps metadata directly to MANUAL_REVIEW_ITEM for term warping capability
     getManualReviewList(
         standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string,
         activeUser: COMPASS_USER | null, records?: ACADEMIC_RECORD[], terms?: ACADEMIC_TERM[]
-    ) {
+    ): MANUAL_REVIEW_ITEM[] {
         const safeStandings = standings || [];
         const safeRemarks = remarks || [];
+        const reviewItems: MANUAL_REVIEW_ITEM[] = [];
 
-        const baseList = safeStandings.filter(ts => {
-            if (ts.termID !== activeTerm) return false;
-            if (ts.termAcademicStatus === 'On-Probation') return false;
+        safeStandings.forEach(ts => {
+            if (ts.termID !== activeTerm) return;
+            if (ts.termAcademicStatus === 'On-Probation') return;
 
             if (ts.termAcademicStatus === 'Advised to Shift') {
                 const isAddressed = safeRemarks.some(r => r.standingID === ts.standingID && r.content && r.content.includes('[Shifting Recommended]'));
-                return !isAddressed;
+                if (!isAddressed) {
+                    const desc = ts.isConsecutiveOP ? "Consecutive Probation" : "Academic Deficit (CQPA / 2-Strike)";
+                    reviewItems.push({ ...ts, issueDescription: desc, targetTermID: activeTerm });
+                }
+            } else if (ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff') {
+                reviewItems.push({ ...ts, issueDescription: "Missing Final Grades", targetTermID: activeTerm });
             }
-            return ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff';
         });
 
         // Scan for unresolved INCs from strictly older semesters
@@ -196,14 +206,29 @@ export const backendAPI = {
                 });
 
                 expiredIncs.forEach(inc => {
-                    const activeTs = safeStandings.find(ts => ts.studentID === inc.studentID && ts.termID === activeTerm);
-                    if (activeTs && !baseList.some(r => r.standingID === activeTs.standingID)) {
-                        baseList.push(activeTs);
+                    const incTermObj = terms.find(t => t.termID === inc.termID);
+                    const termLabel = incTermObj ? `${incTermObj.termSem} AY ${incTermObj.termSY}` : 'Prior Term';
+
+                    const existingIndex = reviewItems.findIndex(r => r.studentID === inc.studentID);
+
+                    let baseTs = safeStandings.find(ts => ts.studentID === inc.studentID && ts.termID === activeTerm);
+                    if (!baseTs) {
+                        baseTs = safeStandings.find(ts => ts.studentID === inc.studentID && ts.termID === inc.termID);
+                    }
+
+                    if (baseTs) {
+                        if (existingIndex === -1) {
+                            reviewItems.push({ ...baseTs, issueDescription: `Unresolved INC (${termLabel})`, targetTermID: inc.termID });
+                        } else {
+                            if (!reviewItems[existingIndex].issueDescription.includes('Unresolved INC')) {
+                                reviewItems[existingIndex].issueDescription += ` | Unresolved INC (${termLabel})`;
+                            }
+                        }
                     }
                 });
             }
         }
-        return baseList;
+        return reviewItems;
     },
 
     async fetchInitialSystemData() {
@@ -240,7 +265,6 @@ export const backendAPI = {
             ? sysRes.data[0]
             : { id: 'global', probationThreshold: 2.0, atsThreshold: 1.0 };
 
-        // FIXED: Foundational map to cure the yrLevel vs yearLevel database collision globally
         const rawProgramCourses = (pcRes.data || []) as any[];
         const mappedProgramCourses: PROGRAM_COURSE[] = rawProgramCourses.map(pc => ({
             ...pc,
@@ -252,7 +276,7 @@ export const backendAPI = {
                 students: enrichedStudents,
                 programs: progRes.data as DEGREE_PROGRAM[],
                 courses: courRes.data as COURSE[],
-                programCourses: mappedProgramCourses, // Replaced with the mapped array
+                programCourses: mappedProgramCourses,
                 records: recRes.data as ACADEMIC_RECORD[],
                 remarks: remRes.data as ADVISING_REMARK[],
                 standings: standRes.data as TERM_STANDING[],
@@ -283,10 +307,8 @@ export const backendAPI = {
 
         let newInsertedPolicies: RETENTION_POLICY[] = [];
 
-        // Automated Cohort Inheritance Engine
         if (isNewCohort) {
             if (customPolicies && customPolicies.length > 0) {
-                // User opted to override: Insert their custom tabular data
                 const mappedToInsert: RETENTION_POLICY[] = customPolicies.map(cp => ({
                     policyID: generateID('RP-'),
                     programCode: cp.programCode,
@@ -298,7 +320,6 @@ export const backendAPI = {
                 if (polError) return { error: polError.message, newPolicies: null };
                 newInsertedPolicies = mappedToInsert;
             } else {
-                // User ignored the button: Auto-clone the latest previous policies
                 const priorPolicies = currentPolicies.filter(p => p.effectiveYear < startYear);
                 const maxYear = priorPolicies.length > 0 ? Math.max(...priorPolicies.map(p => p.effectiveYear)) : null;
 
@@ -311,7 +332,6 @@ export const backendAPI = {
                         effectiveYear: startYear, majorPassingGrade: p.majorPassingGrade, minorPassingGrade: p.minorPassingGrade
                     }));
                 } else {
-                    // Failsafe if the database was completely empty
                     fallbackInsert = programs.map(prog => ({
                         policyID: generateID('RP-'), programCode: prog.programCode,
                         effectiveYear: startYear, majorPassingGrade: 2.0, minorPassingGrade: 2.0
@@ -351,7 +371,7 @@ export const backendAPI = {
         student: EnrichedStudent | null, activeTerm: string, termDetails: ACADEMIC_TERM | undefined,
         programCourses: PROGRAM_COURSE[], courses: COURSE[], records: ACADEMIC_RECORD[],
         prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[], globalActiveTermID: string,
-        retentionPolicies: RETENTION_POLICY[] // FIXED: Added policy integration
+        retentionPolicies: RETENTION_POLICY[]
     ) {
         if (!student || !termDetails) return [];
         const studentRecords = records.filter(r => r.studentID === student.studentID && r.termID === activeTerm);
@@ -359,7 +379,6 @@ export const backendAPI = {
 
         const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
 
-        // FIXED: Universal prerequisite evaluator that checks grades against cohort-specific thresholds
         const checkPassed = (prereqID: string) => {
             return records.find(hr => {
                 if (hr.studentID !== student.studentID || hr.termID >= activeTerm) return false;
@@ -417,7 +436,7 @@ export const backendAPI = {
 
     async getCurriculumProgress(
         student: EnrichedStudent | null, activeTerm: string, programCourses: PROGRAM_COURSE[],
-        records: ACADEMIC_RECORD[], retentionPolicies: RETENTION_POLICY[] // FIXED: Added
+        records: ACADEMIC_RECORD[], retentionPolicies: RETENTION_POLICY[]
     ) {
         if (!student) return { completed: [], enrolled: [], remaining: [] };
         const curriculum = programCourses.filter(pc => pc.programCode === student.programCode);
@@ -476,7 +495,6 @@ export const backendAPI = {
             const { error } = await supabase.from('ACADEMIC_RECORD').insert(newRecords);
             if (error) return { data: [], newStanding: null, error: error.message };
 
-            // FIXED: Generates an immediate standing so the term doesn't disappear from Academic History
             const basicStanding: TERM_STANDING = {
                 standingID: generateID('ST-'), termQPA: 0, semCQPA: 0,
                 termAcademicStatus: 'Unencoded', isConsecutiveOP: false,
@@ -504,13 +522,20 @@ export const backendAPI = {
 
         const upperVal = val.trim().toUpperCase();
 
+        // FIXED: Dynamically route empty grade inputs to the deletion cascade engine to eradicate ghost records
+        if (upperVal === "") {
+            if (recordID) {
+                return await backendAPI.deleteGradeRow(recordID, currentRecords, student, activeTerm, programCourses, courses, program, currentStandings, terms, retentionPolicies);
+            } else {
+                return { recordsData: currentRecords, standingsData: currentStandings, error: null };
+            }
+        }
+
         const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
         const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
         const threshold = cohortPolicy ? (pc?.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
 
-        if (upperVal === "") {
-            finalGrade = null; gradeRemarks = null;
-        } else if (upperVal === "F") {
+        if (upperVal === "F") {
             finalGrade = 0.0; isFailed = true;
         } else if (["INC", "NG", "W", "D"].includes(upperVal)) {
             gradeRemarks = upperVal;
@@ -521,7 +546,6 @@ export const backendAPI = {
                 return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a numerical grade between 0.0 and 4.0, or a valid remark." };
             }
             finalGrade = parsedGrade;
-            // FIXED: Dynamically triggers failure in DB if grade is below the cohort policy threshold
             if (finalGrade < threshold) isFailed = true;
         }
 
@@ -546,7 +570,6 @@ export const backendAPI = {
             updatedRecordsArray.push(updatedRecord);
         }
 
-        // FIXED: Dynamically fetch global settings to prevent Evaluator crashes, then cascade.
         const { data: sysRes } = await supabase.from('SYSTEM_SETTINGS').select('*').eq('id', 'global').single();
         const systemSettings = sysRes || { probationThreshold: 2.0, atsThreshold: 1.0 };
 
@@ -564,16 +587,15 @@ export const backendAPI = {
     },
 
     async deleteGradeRow(
-        recordID: string, currentRecords: ACADEMIC_RECORD[], student: EnrichedStudent, activeTerm: string, // CHANGED TO EnrichedStudent
+        recordID: string, currentRecords: ACADEMIC_RECORD[], student: EnrichedStudent, activeTerm: string,
         programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
-        currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[] // ADDED PARAMETER
+        currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[]
     ) {
         const { error } = await supabase.from('ACADEMIC_RECORD').delete().eq('recordID', recordID);
         if (error) return { recordsData: null, standingsData: null, error: error.message };
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
 
-        // FIXED: Dynamically fetch global settings prior to cascading deletions.
         const { data: sysRes } = await supabase.from('SYSTEM_SETTINGS').select('*').eq('id', 'global').single();
         const systemSettings = sysRes || { probationThreshold: 2.0, atsThreshold: 1.0 };
 
@@ -597,9 +619,8 @@ export const backendAPI = {
             shsTrack: newStudent.shsTrack,
             yearLevel: newStudent.yearLevel,
             accountStatus: newStudent.accountStatus,
-            yearEnrolled: newStudent.yearEnrolled // ADDED THIS LINE
+            yearEnrolled: newStudent.yearEnrolled
         };
-        // ... rest of function remains identical
 
         const { error: studentError } = await supabase.from('STUDENT').insert([baseStudent]);
         if (studentError) return { data: null, error: studentError.message };
@@ -625,9 +646,8 @@ export const backendAPI = {
             shsTrack: updatedData.shsTrack,
             yearLevel: updatedData.yearLevel,
             accountStatus: updatedData.accountStatus,
-            yearEnrolled: updatedData.yearEnrolled // ADDED THIS LINE
+            yearEnrolled: updatedData.yearEnrolled
         };
-        // ... rest of function remains identical
 
         const { error: studentError } = await supabase.from('STUDENT').update(baseStudent).eq('studentID', updatedData.studentID);
         if (studentError) return { data: null, error: studentError.message };
@@ -709,15 +729,12 @@ export const backendAPI = {
         return null;
     },
 
-    // REVISION 1 (Prerequisite Validation): Strictly splits arrays, validates existence, and wipes old data to prevent duplication.
     async saveCourseToCurriculum(
         payload: { courseCode: string; title: string; units: string; yearLevel: string; semester: string; classification: string; isCQPAIncluded: boolean; prerequisites: string; },
         program: DEGREE_PROGRAM, editingCourseCode: string | null, courses: COURSE[], programCourses: PROGRAM_COURSE[], currentPrereqs: COURSE_PREREQUISITE[]
     ) {
-        // 1. Prepare raw inputs by splitting commas and trimming
         const rawPrereqs = payload.prerequisites.split(',').map(s => s.trim()).filter(s => s !== "");
 
-        // 2. Global DB Check: Strip spaces and uppercase BOTH sides for perfect format-agnostic matching
         for (const rawCode of rawPrereqs) {
             const normRaw = rawCode.replace(/\s+/g, "").toUpperCase();
             const existsGlobally = courses.some(c => c.courseCode.replace(/\s+/g, "").toUpperCase() === normRaw);
@@ -779,7 +796,6 @@ export const backendAPI = {
             newPrereqs.push({ prereqID: generateID('PR-'), programCourseID: finalProgCourseID, prereqProgramCourseID: match.programCourseID });
         }
 
-        // 4. Wipe old prerequisite relationships & save new matches
         await supabase.from('COURSE_PREREQUISITE').delete().eq('programCourseID', finalProgCourseID);
 
         if (newPrereqs.length > 0) {
@@ -793,19 +809,15 @@ export const backendAPI = {
         return { coursesData: newCourses, programCoursesData: newProgCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
-    // INSIDE export const backendAPI = { ... }
-
     async deleteCourseFromCurriculum(
         programCode: string, courseCode: string, programCourses: PROGRAM_COURSE[], currentPrereqs: COURSE_PREREQUISITE[]
     ) {
         const targetPC = programCourses.find(pc => pc.programCode === programCode && pc.courseCode === courseCode);
         if (!targetPC) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: "Curriculum mapping not found in database." };
 
-        // 1. Wipe associated prerequisites first to prevent Foreign Key constraint violations
         await supabase.from('COURSE_PREREQUISITE').delete().eq('programCourseID', targetPC.programCourseID);
         await supabase.from('COURSE_PREREQUISITE').delete().eq('prereqProgramCourseID', targetPC.programCourseID);
 
-        // 2. Delete the actual program course mapping
         const { error } = await supabase.from('PROGRAM_COURSE').delete().eq('programCourseID', targetPC.programCourseID);
 
         if (error) {
@@ -819,40 +831,53 @@ export const backendAPI = {
         return { programCoursesData: updatedProgramCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
+    // FIXED: Chronological filtering mapping injected into generateReport to capture unencoded students accurately
     async generateReport(
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
-        students: EnrichedStudent[], activeStandings: TERM_STANDING[]
+        students: EnrichedStudent[], activeStandings: TERM_STANDING[], targetTermDetails?: ACADEMIC_TERM
     ) {
-        // FIXED: The report now strictly maps over the standings of the specific term.
-        // It will no longer blindly display every student in the database.
-        const data = activeStandings.map(ts => {
-            const student = students.find(s => s.studentID === ts.studentID);
-            if (!student) return null;
-            return {
-                standingID: ts.standingID,
-                termQPA: ts.termQPA,
-                semCQPA: ts.semCQPA,
-                termAcademicStatus: ts.termAcademicStatus,
-                isConsecutiveOP: ts.isConsecutiveOP,
-                studentID: ts.studentID,
-                termID: ts.termID,
-                student: student
-            };
-        }).filter(item => item !== null);
+        if (!targetTermDetails) return { data: [], error: "No historical term context selected." };
+        const targetYear = parseInt(targetTermDetails.termSY.split('-')[0]);
+
+        const data = students.filter(s => s.yearEnrolled <= targetYear).map(student => {
+            const ts = activeStandings.find(st => st.studentID === student.studentID);
+            if (ts) {
+                return {
+                    standingID: ts.standingID,
+                    termQPA: ts.termQPA,
+                    semCQPA: ts.semCQPA,
+                    termAcademicStatus: ts.termAcademicStatus,
+                    isConsecutiveOP: ts.isConsecutiveOP,
+                    studentID: ts.studentID,
+                    termID: ts.termID,
+                    student: student
+                };
+            } else {
+                return {
+                    standingID: `SYN-${student.studentID}`,
+                    termQPA: 0.0,
+                    semCQPA: 0.0,
+                    termAcademicStatus: "Unencoded",
+                    isConsecutiveOP: false,
+                    studentID: student.studentID,
+                    termID: targetTermDetails.termID,
+                    student: student
+                };
+            }
+        });
 
         const filtered = data.filter(record => {
-            // record is guaranteed non-null here due to the filter above
             const matchStatus = statusFilter === "All Students" ||
-                (statusFilter === "All Flagged" && (record!.termAcademicStatus === "On-Probation" || record!.termAcademicStatus === "Advised to Shift")) ||
-                record!.termAcademicStatus === statusFilter;
-            const matchProgram = programFilter === "All" || record!.student.programCode === programFilter;
-            const matchYear = yearFilter === "All" || record!.student.yearLevel.toString() === yearFilter;
-            const matchAccount = accountFilter === "All" || record!.student.accountStatus === accountFilter;
+                (statusFilter === "All Flagged" && (record.termAcademicStatus === "On-Probation" || record.termAcademicStatus === "Advised to Shift")) ||
+                record.termAcademicStatus === statusFilter;
+            const matchProgram = programFilter === "All" || record.student.programCode === programFilter;
+            const matchYear = yearFilter === "All" || record.student.yearLevel.toString() === yearFilter;
+            const matchAccount = accountFilter === "All" || record.student.accountStatus === accountFilter;
 
             return matchStatus && matchProgram && matchYear && matchAccount;
         });
 
-        return { data: filtered as (TERM_STANDING & { student: EnrichedStudent })[], error: null };
+        return { data: filtered, error: null };
     },
 
     async updateSystemSettings(newSettings: SYSTEM_SETTINGS) {
@@ -860,7 +885,6 @@ export const backendAPI = {
         return { error: error ? error.message : null };
     },
 
-    // FIXED: Added missing SQL execution block for updating user profiles from Settings
     async updateUserProfile(userID: string, firstName: string, middleName: string | null, lastName: string) {
         const { error } = await supabase
             .from('COMPASS_USER')

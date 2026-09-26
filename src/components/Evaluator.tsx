@@ -40,7 +40,8 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
 };
 
 export default function Evaluator() {
-    const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms, retentionPolicies } = useStore();
+    // FIXED: Extracted pendingLocalTerm and setPendingLocalTerm to enable Term Warping
+    const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms, retentionPolicies, pendingLocalTerm, setPendingLocalTerm } = useStore();
 
     const selectedStudent = focusedStudentID ? students.find(s => s.studentID === focusedStudentID) || null : null;
     const setSelectedStudent = (student: EnrichedStudent | null) => setFocusedStudentID(student ? student.studentID : null);
@@ -54,7 +55,6 @@ export default function Evaluator() {
     const [showExtraCourseDropdown, setShowExtraCourseDropdown] = useState(false);
     const [courseSearch, setCourseSearch] = useState("");
 
-    // FIXED: Click-outside listener for the Add Subject dropdown
     const dropdownRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -67,6 +67,7 @@ export default function Evaluator() {
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showExtraCourseDropdown]);
+
     const [dismissedCourses, setDismissedCourses] = useState<string[]>([]);
     const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
 
@@ -95,7 +96,6 @@ export default function Evaluator() {
     const termStanding = standings.find(ts => ts.studentID === selectedStudent?.studentID && ts.termID === localTerm);
     const historyStandings = standings.filter(ts => ts.studentID === selectedStudent?.studentID);
 
-    // FIXED: Global Legacy Normalizer for active status
     let currentStatus = termStanding?.termAcademicStatus as string || "No Data";
     if (currentStatus.toUpperCase() === 'ADVISED-TO-SHIFT') currentStatus = 'Advised to Shift';
     if (currentStatus.toUpperCase() === 'ON-PROBATION') currentStatus = 'On-Probation';
@@ -125,6 +125,14 @@ export default function Evaluator() {
         setLocalTerm(activeTerm);
     }, [activeTerm, selectedStudent?.studentID]);
 
+    // FIXED: Dedicated hook intercepting Term Warping commands from the Dashboard
+    useEffect(() => {
+        if (pendingLocalTerm && localTerm !== pendingLocalTerm) {
+            setLocalTerm(pendingLocalTerm);
+            setPendingLocalTerm(null);
+        }
+    }, [pendingLocalTerm, localTerm, setPendingLocalTerm]);
+
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
 
@@ -152,7 +160,6 @@ export default function Evaluator() {
         let isMounted = true;
         const fetchBackendData = async () => {
             setIsLoading(true);
-            // FIXED: Passing retentionPolicies to both calls
             const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies);
             const prog = await backendAPI.getCurriculumProgress(selectedStudent, activeTerm, programCourses, records, retentionPolicies);
             if (isMounted) { setDisplayRows(rows); setProgressStats(prog); setIsLoading(false); }
@@ -175,7 +182,6 @@ export default function Evaluator() {
         if (!activeUser || !selectedStudent || !localTermDetails) return;
         setIsLoading(true);
 
-        // FIXED: Deconstructs the newStanding variable to update the UI instantly
         const { data: newRecords, newStanding, error } = await backendAPI.generateAutoPopulateRecords(
             selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID
         );
@@ -208,7 +214,7 @@ export default function Evaluator() {
         if (standingsData) setStandings(standingsData);
         pushAudit(`ADDED_SUBJECT_${localTerm}`, selectedStudent.studentID);
         setShowExtraCourseDropdown(false);
-        setCourseSearch(""); // Reset search after adding
+        setCourseSearch("");
     };
 
     const handleGradeChange = async (code: string, val: string, recordID?: string) => {
@@ -371,7 +377,6 @@ export default function Evaluator() {
                         )}
                         {selectedStudent && (
                             <div className="flex flex-col gap-4 pb-4">
-                                {/* FIXED: Replaced legacy check with normalized currentStatus */}
                                 {currentStatus === 'Advised to Shift' && !isEditingProfile && (
                                     <div className="flex shrink-0 items-start justify-between gap-3 rounded-lg border border-coral dark:border-red-900 bg-coral-tint dark:bg-red-900/30 p-4 text-coral dark:text-red-400 transition-colors">
                                         <div className="flex items-start gap-3">
@@ -400,7 +405,6 @@ export default function Evaluator() {
                                                 </div>
                                                 <div className="font-mono text-sm text-slate-500 dark:text-slate-400">{selectedStudent.studentID}</div>
                                             </div>
-                                            {/* FIXED: Replaced legacy static mapping with normalized currentStatus bubble */}
                                             <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${currentStatus === 'Advised to Shift' ? 'bg-coral dark:bg-red-700 text-white' : currentStatus === 'On-Probation' ? 'bg-amber dark:bg-amber-700 text-white' : currentStatus === 'Unencoded' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-700 dark:bg-blue-600 text-white'}`}>{currentStatus}</span>
                                         </div>
 
@@ -475,7 +479,6 @@ export default function Evaluator() {
                 </div>
 
                 <div className="relative flex-1 overflow-y-auto bg-white dark:bg-slate-800 transition-colors">
-                    {/* FIXED: Removed full-screen loading blocker, replaced with subtle indicator to eliminate UX latency feeling */}
                     {isLoading && (<div className="absolute top-2 right-4 z-10 flex items-center justify-center"><div className="animate-pulse text-xs font-bold text-blue-700 dark:text-blue-400">Syncing...</div></div>)}
 
                     {selectedStudent ? (
@@ -506,7 +509,6 @@ export default function Evaluator() {
                                                     <button onClick={() => { setShowExtraCourseDropdown(!showExtraCourseDropdown); setCourseSearch(""); }} className="rounded-md bg-blue-700 dark:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700">
                                                         + Add Subject
                                                     </button>
-                                                    {/* FIXED: Searchable Add-Subject Input embedded inside the dropdown */}
                                                     {showExtraCourseDropdown && (
                                                         <div ref={dropdownRef} className="absolute right-0 top-full z-20 mt-1 max-h-[300px] w-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl">
                                                             <div className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-900 shadow-sm">
@@ -515,11 +517,12 @@ export default function Evaluator() {
                                                             </div>
                                                             {programCourses.filter(pc => {
                                                                 if (pc.programCode !== selectedStudent?.programCode) return false;
-                                                                // Prevent duplicate adds in the current term
                                                                 if (displayRows.some(r => r.courseCode === pc.courseCode)) return false;
                                                                 if (!pc.courseCode.toLowerCase().includes(courseSearch.toLowerCase())) return false;
 
-                                                                // FIXED: Add Subject historical exclusions dynamically read cohort policy
+                                                                // FIXED: Locks Major subjects strictly to their assigned curriculum semester
+                                                                if (pc.majorMinorClassif === 'Major' && localTermDetails && pc.termSem !== localTermDetails.termSem) return false;
+
                                                                 const cohortPolicy = retentionPolicies.find(p => p.programCode === selectedStudent?.programCode && p.effectiveYear === selectedStudent?.yearEnrolled);
                                                                 const passThreshold = cohortPolicy ? (pc.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
 
@@ -585,7 +588,6 @@ export default function Evaluator() {
                                         const term = terms.find(t => t.termID === ts.termID);
                                         const isExpanded = expandedTerms[ts.termID];
 
-                                        // FIXED: Legacy History String Normalizer
                                         let histStatus = ts.termAcademicStatus as string;
                                         if (histStatus.toUpperCase() === 'ADVISED-TO-SHIFT') histStatus = 'Advised to Shift';
                                         if (histStatus.toUpperCase() === 'ON-PROBATION') histStatus = 'On-Probation';
@@ -612,8 +614,7 @@ export default function Evaluator() {
                                                                     </tr>
                                                                     </thead>
                                                                     <tbody>
-                                                                    {/* FIXED: Strict Visual Ghost Purge injected into filter chain */}
-                                                                    {records.filter(r => r.termID === ts.termID).filter(rec => {
+                                                                    {records.filter(r => r.studentID === selectedStudent?.studentID && r.termID === ts.termID).filter(rec => {
                                                                         if (rec.finalGrade !== null || rec.gradeRemarks !== null) return true;
                                                                         const hasGradedDuplicate = records.some(dup => dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
                                                                         return !hasGradedDuplicate;
