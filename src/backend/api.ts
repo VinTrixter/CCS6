@@ -522,31 +522,30 @@ export const backendAPI = {
 
         const upperVal = val.trim().toUpperCase();
 
-        // FIXED: Dynamically route empty grade inputs to the deletion cascade engine to eradicate ghost records
+        // REVISED: An empty string now safely nullifies the grade instead of deleting the row.
+        // This restores the ability to edit grades, and allows the "X" button to appear.
         if (upperVal === "") {
-            if (recordID) {
-                return await backendAPI.deleteGradeRow(recordID, currentRecords, student, activeTerm, programCourses, courses, program, currentStandings, terms, retentionPolicies);
-            } else {
-                return { recordsData: currentRecords, standingsData: currentStandings, error: null };
-            }
-        }
-
-        const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
-        const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
-        const threshold = cohortPolicy ? (pc?.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
-
-        if (upperVal === "F") {
-            finalGrade = 0.0; isFailed = true;
-        } else if (["INC", "NG", "W", "D"].includes(upperVal)) {
-            gradeRemarks = upperVal;
-            if (["NG", "D"].includes(upperVal)) isFailed = true;
+            finalGrade = null;
+            gradeRemarks = null;
+            isFailed = false;
         } else {
-            const parsedGrade = Number(upperVal);
-            if (isNaN(parsedGrade) || parsedGrade < 0.0 || parsedGrade > 4.0) {
-                return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a numerical grade between 0.0 and 4.0, or a valid remark." };
+            const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
+            const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
+            const threshold = cohortPolicy ? (pc?.majorMinorClassif === 'Major' ? cohortPolicy.majorPassingGrade : cohortPolicy.minorPassingGrade) : 1.0;
+
+            if (upperVal === "F") {
+                finalGrade = 0.0; isFailed = true;
+            } else if (["INC", "NG", "W", "D"].includes(upperVal)) {
+                gradeRemarks = upperVal;
+                if (["NG", "D"].includes(upperVal)) isFailed = true;
+            } else {
+                const parsedGrade = Number(upperVal);
+                if (isNaN(parsedGrade) || parsedGrade < 0.0 || parsedGrade > 4.0) {
+                    return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a numerical grade between 0.0 and 4.0, or a valid remark." };
+                }
+                finalGrade = parsedGrade;
+                if (finalGrade < threshold) isFailed = true;
             }
-            finalGrade = parsedGrade;
-            if (finalGrade < threshold) isFailed = true;
         }
 
         let updatedRecord: ACADEMIC_RECORD;
