@@ -913,6 +913,108 @@ export const backendAPI = {
         return { programCoursesData: updatedProgramCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
+    async deleteProgramAndUniqueCourses(
+        programCode: string,
+        programs: DEGREE_PROGRAM[],
+        programCourses: PROGRAM_COURSE[],
+        currentPrereqs: COURSE_PREREQUISITE[],
+        courses: COURSE[]
+    ) {
+        const targetProgramCourses = programCourses.filter(pc => pc.programCode === programCode);
+        const targetProgramCourseIDs = targetProgramCourses.map(pc => pc.programCourseID);
+
+        if (targetProgramCourseIDs.length === 0) {
+            const { error: programError } = await supabase.from('DEGREE_PROGRAM').delete().eq('programCode', programCode);
+            if (programError) {
+                return { programsData: null, programCoursesData: null, coursePrerequisitesData: null, coursesData: null, error: programError.message };
+            }
+
+            return {
+                programsData: programs.filter(p => p.programCode !== programCode),
+                programCoursesData: programCourses.filter(pc => pc.programCode !== programCode),
+                coursePrerequisitesData: currentPrereqs.filter(
+                    pr => !targetProgramCourseIDs.includes(pr.programCourseID) && !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
+                ),
+                coursesData: courses,
+                error: null
+            };
+        }
+
+        const normalizeCode = (code: string) => code.replace(/\s+/g, "").toUpperCase();
+        const otherProgramCourseCodes = new Set(
+            programCourses
+                .filter(pc => pc.programCode !== programCode)
+                .map(pc => normalizeCode(pc.courseCode))
+        );
+
+        const uniqueCourseCodes = Array.from(new Set(
+            targetProgramCourses
+                .filter(pc => !otherProgramCourseCodes.has(normalizeCode(pc.courseCode)))
+                .map(pc => pc.courseCode)
+        ));
+
+        await supabase.from('COURSE_PREREQUISITE').delete().in('programCourseID', targetProgramCourseIDs);
+        await supabase.from('COURSE_PREREQUISITE').delete().in('prereqProgramCourseID', targetProgramCourseIDs);
+
+        const { error: programCoursesError } = await supabase.from('PROGRAM_COURSE').delete().in('programCourseID', targetProgramCourseIDs);
+        if (programCoursesError) {
+            if (programCoursesError.code === '23503') {
+                return {
+                    programsData: null,
+                    programCoursesData: null,
+                    coursePrerequisitesData: null,
+                    coursesData: null,
+                    error: "Cannot delete this curriculum because academic records are still tied to its course mappings."
+                };
+            }
+            return {
+                programsData: null,
+                programCoursesData: null,
+                coursePrerequisitesData: null,
+                coursesData: null,
+                error: programCoursesError.message
+            };
+        }
+
+        const { error: programError } = await supabase.from('DEGREE_PROGRAM').delete().eq('programCode', programCode);
+        if (programError) {
+            return {
+                programsData: null,
+                programCoursesData: null,
+                coursePrerequisitesData: null,
+                coursesData: null,
+                error: programError.message
+            };
+        }
+
+        const remainingCourses = courses.filter(
+            course => !uniqueCourseCodes.map(normalizeCode).includes(normalizeCode(course.courseCode))
+        );
+
+        if (uniqueCourseCodes.length > 0) {
+            const { error: courseError } = await supabase.from('COURSE').delete().in('courseCode', uniqueCourseCodes);
+            if (courseError) {
+                return {
+                    programsData: null,
+                    programCoursesData: null,
+                    coursePrerequisitesData: null,
+                    coursesData: null,
+                    error: courseError.message
+                };
+            }
+        }
+
+        return {
+            programsData: programs.filter(p => p.programCode !== programCode),
+            programCoursesData: programCourses.filter(pc => pc.programCode !== programCode),
+            coursePrerequisitesData: currentPrereqs.filter(
+                pr => !targetProgramCourseIDs.includes(pr.programCourseID) && !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
+            ),
+            coursesData: remainingCourses,
+            error: null
+        };
+    },
+
     async generateReport(
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
         students: EnrichedStudent[], activeStandings: TERM_STANDING[], targetTermDetails?: ACADEMIC_TERM
