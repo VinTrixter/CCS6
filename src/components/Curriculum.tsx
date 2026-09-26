@@ -102,22 +102,26 @@ export default function Curriculum() {
             return alert("Invalid School Year format. Please use YYYY-YYYY (e.g., 2024-2025).");
         }
 
-        const thresholdNum = Number(progForm.threshold);
-        if (isNaN(thresholdNum) || thresholdNum < 0.1 || thresholdNum > 4.0) {
-            return alert("Invalid Passing Threshold. Must be between 0.1 and 4.0.");
+        const trimmedCode = progForm.code.trim();
+        const trimmedTitle = progForm.title.trim();
+
+        if (!trimmedCode || !trimmedTitle) {
+            return alert("Program code and title are required.");
         }
 
-        const newProg: DEGREE_PROGRAM = { programCode: progForm.code.toUpperCase(), programTitle: progForm.title, curriculumYear: progForm.year, passingGradeThreshold: thresholdNum };
-        const error = await backendAPI.validateCurriculum(newProg.programCode, newProg.curriculumYear, editingProgCode, programs);
+        const newProg: DEGREE_PROGRAM = {
+            programCode: trimmedCode.toUpperCase(),
+            programTitle: trimmedTitle,
+            curriculumYear: progForm.year
+        };
+
+        const { data, error } = await backendAPI.saveProgram(newProg, editingProgCode, programs);
+
         if (error) return alert(error);
 
-        if (editingProgCode) {
-            setPrograms(programs.map(p => p.programCode === editingProgCode ? newProg : p));
-            pushAudit("UPDATED_CURRICULUM", newProg.programCode);
-        } else {
-            setPrograms([...programs, newProg]);
-            pushAudit("CREATED_CURRICULUM", newProg.programCode);
-        }
+        if (data) setPrograms(data);
+
+        pushAudit(editingProgCode ? "UPDATED_CURRICULUM" : "CREATED_CURRICULUM", newProg.programCode);
         setShowProgramForm(false);
         setSelectedProgram(newProg);
     };

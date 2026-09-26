@@ -786,18 +786,6 @@ export const backendAPI = {
         return { data: remarks.filter(r => r.remarkID !== remarkID), error: null };
     },
 
-    async validateCurriculum(programCode: string, curriculumYear: string, editingProgCode: string | null, programs: DEGREE_PROGRAM[]) {
-        const exists = programs.some(p => p.programCode === programCode && p.curriculumYear === curriculumYear && p.programCode !== editingProgCode);
-        if (exists) return "A curriculum for this program and effective year already exists.";
-
-        if (editingProgCode) {
-            await supabase.from('DEGREE_PROGRAM').update({ programCode, curriculumYear }).eq('programCode', editingProgCode);
-        } else {
-            await supabase.from('DEGREE_PROGRAM').insert([{ programCode, curriculumYear, programTitle: "New Program" }]);
-        }
-        return null;
-    },
-
     async saveCourseToCurriculum(
         payload: { courseCode: string; title: string; units: string; yearLevel: string; semester: string; classification: string; isCQPAIncluded: boolean; prerequisites: string; },
         program: DEGREE_PROGRAM, editingCourseCode: string | null, courses: COURSE[], programCourses: PROGRAM_COURSE[], currentPrereqs: COURSE_PREREQUISITE[]
@@ -913,6 +901,88 @@ export const backendAPI = {
         return { programCoursesData: updatedProgramCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
+    async validateCurriculum(
+        programCode: string,
+        curriculumYear: string,
+        editingProgCode: string | null,
+        programs: DEGREE_PROGRAM[]
+    ) {
+        const exists = programs.some(p =>
+            p.programCode === programCode &&
+            p.curriculumYear === curriculumYear &&
+            p.programCode !== editingProgCode
+        );
+
+        if (exists) return "A curriculum for this program and effective year already exists.";
+        return null;
+    },
+
+    async saveProgram(
+        program: DEGREE_PROGRAM,
+        editingProgCode: string | null,
+        programs: DEGREE_PROGRAM[]
+    ) {
+        const normalizedCode = program.programCode.trim().toUpperCase();
+        const normalizedTitle = program.programTitle.trim();
+
+        if (!normalizedCode || !normalizedTitle) {
+            return { data: null, error: "Program code and title are required." };
+        }
+
+        const validationError = await this.validateCurriculum(
+            normalizedCode,
+            program.curriculumYear,
+            editingProgCode,
+            programs
+        );
+
+        if (validationError) {
+            return { data: null, error: validationError };
+        }
+
+        if (editingProgCode) {
+            const { error } = await supabase
+                .from("DEGREE_PROGRAM")
+                .update({
+                    programCode: normalizedCode,
+                    programTitle: normalizedTitle,
+                    curriculumYear: program.curriculumYear
+                })
+                .eq("programCode", editingProgCode);
+
+            if (error) return { data: null, error: error.message };
+
+            return {
+                data: programs.map(p =>
+                    p.programCode === editingProgCode
+                        ? {
+                            ...p,
+                            programCode: normalizedCode,
+                            programTitle: normalizedTitle,
+                            curriculumYear: program.curriculumYear
+                        }
+                        : p
+                ),
+                error: null
+            };
+        }
+
+        const { error } = await supabase
+            .from("DEGREE_PROGRAM")
+            .insert([{
+                programCode: normalizedCode,
+                programTitle: normalizedTitle,
+                curriculumYear: program.curriculumYear
+            }]);
+
+        if (error) return { data: null, error: error.message };
+
+        return {
+            data: [...programs, { ...program, programCode: normalizedCode, programTitle: normalizedTitle }],
+            error: null
+        };
+    },
+
     async deleteProgramAndUniqueCourses(
         programCode: string,
         programs: DEGREE_PROGRAM[],
@@ -922,23 +992,6 @@ export const backendAPI = {
     ) {
         const targetProgramCourses = programCourses.filter(pc => pc.programCode === programCode);
         const targetProgramCourseIDs = targetProgramCourses.map(pc => pc.programCourseID);
-
-        if (targetProgramCourseIDs.length === 0) {
-            const { error: programError } = await supabase.from('DEGREE_PROGRAM').delete().eq('programCode', programCode);
-            if (programError) {
-                return { programsData: null, programCoursesData: null, coursePrerequisitesData: null, coursesData: null, error: programError.message };
-            }
-
-            return {
-                programsData: programs.filter(p => p.programCode !== programCode),
-                programCoursesData: programCourses.filter(pc => pc.programCode !== programCode),
-                coursePrerequisitesData: currentPrereqs.filter(
-                    pr => !targetProgramCourseIDs.includes(pr.programCourseID) && !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
-                ),
-                coursesData: courses,
-                error: null
-            };
-        }
 
         const normalizeCode = (code: string) => code.replace(/\s+/g, "").toUpperCase();
         const otherProgramCourseCodes = new Set(
@@ -953,20 +1006,15 @@ export const backendAPI = {
                 .map(pc => pc.courseCode)
         ));
 
-        await supabase.from('COURSE_PREREQUISITE').delete().in('programCourseID', targetProgramCourseIDs);
-        await supabase.from('COURSE_PREREQUISITE').delete().in('prereqProgramCourseID', targetProgramCourseIDs);
+        await supabase.from("COURSE_PREREQUISITE").delete().in("programCourseID", targetProgramCourseIDs);
+        await supabase.from("COURSE_PREREQUISITE").delete().in("prereqProgramCourseID", targetProgramCourseIDs);
 
-        const { error: programCoursesError } = await supabase.from('PROGRAM_COURSE').delete().in('programCourseID', targetProgramCourseIDs);
+        const { error: programCoursesError } = await supabase
+            .from("PROGRAM_COURSE")
+            .delete()
+            .in("programCourseID", targetProgramCourseIDs);
+
         if (programCoursesError) {
-            if (programCoursesError.code === '23503') {
-                return {
-                    programsData: null,
-                    programCoursesData: null,
-                    coursePrerequisitesData: null,
-                    coursesData: null,
-                    error: "Cannot delete this curriculum because academic records are still tied to its course mappings."
-                };
-            }
             return {
                 programsData: null,
                 programCoursesData: null,
@@ -976,7 +1024,11 @@ export const backendAPI = {
             };
         }
 
-        const { error: programError } = await supabase.from('DEGREE_PROGRAM').delete().eq('programCode', programCode);
+        const { error: programError } = await supabase
+            .from("DEGREE_PROGRAM")
+            .delete()
+            .eq("programCode", programCode);
+
         if (programError) {
             return {
                 programsData: null,
@@ -992,7 +1044,11 @@ export const backendAPI = {
         );
 
         if (uniqueCourseCodes.length > 0) {
-            const { error: courseError } = await supabase.from('COURSE').delete().in('courseCode', uniqueCourseCodes);
+            const { error: courseError } = await supabase
+                .from("COURSE")
+                .delete()
+                .in("courseCode", uniqueCourseCodes);
+
             if (courseError) {
                 return {
                     programsData: null,
@@ -1008,7 +1064,8 @@ export const backendAPI = {
             programsData: programs.filter(p => p.programCode !== programCode),
             programCoursesData: programCourses.filter(pc => pc.programCode !== programCode),
             coursePrerequisitesData: currentPrereqs.filter(
-                pr => !targetProgramCourseIDs.includes(pr.programCourseID) && !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
+                pr => !targetProgramCourseIDs.includes(pr.programCourseID) &&
+                    !targetProgramCourseIDs.includes(pr.prereqProgramCourseID)
             ),
             coursesData: remainingCourses,
             error: null
