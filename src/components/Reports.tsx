@@ -5,7 +5,7 @@ import type { TERM_STANDING } from "../store/types";
 import { backendAPI, type EnrichedStudent } from "../backend/api";
 import * as I from "./icons";
 
-type ReportRecord = TERM_STANDING & { student: EnrichedStudent };
+type ReportRecord = TERM_STANDING & { student: EnrichedStudent; yearLevel?: number };
 
 export default function Reports() {
     const { students, programs, activeTerm, activeUser, standings, can, setActiveView, setFocusedStudentID, pendingReportFilter, setPendingReportFilter, terms } = useStore();
@@ -45,7 +45,6 @@ export default function Reports() {
         let isMounted = true;
         const fetchReport = async () => {
             setIsLoading(true);
-            // FIXED: Passing targetTermDetails unlocks the new chronological mapping engine for unencoded students
             const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings, targetTermDetails);
             if (isMounted) {
                 if (error) alert(error);
@@ -56,6 +55,11 @@ export default function Reports() {
         void fetchReport();
         return () => { isMounted = false; };
     }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails]);
+
+    // FIXED: Safely computes historical year level using explicit snapshot or chronological math
+    const calcYearLevel = (record: ReportRecord) => {
+        return record.yearLevel || Math.max(1, parseInt(targetTermDetails?.termSY.split('-')[0] || "0") - record.student.yearEnrolled + 1);
+    };
 
     return (
         <div className="flex w-full flex-col p-6 lg:p-8 print:p-0">
@@ -175,7 +179,10 @@ export default function Reports() {
                                     </div>
                                     <div className="font-mono text-xs text-slate-500 dark:text-slate-400">{record.student?.studentID}</div>
                                 </td>
-                                <td className="px-5 py-3 text-center"><div className="font-semibold text-slate-700 dark:text-slate-300 print:text-black">{record.student?.programCode}</div><div className="text-xs text-slate-500 dark:text-slate-400">Year {record.student?.yearLevel}</div></td>
+                                <td className="px-5 py-3 text-center">
+                                    <div className="font-semibold text-slate-700 dark:text-slate-300 print:text-black">{record.student?.programCode}</div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">Year {calcYearLevel(record)}</div>
+                                </td>
                                 <td className="px-5 py-3 text-center font-mono">{record.termQPA.toFixed(2)}</td>
                                 <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 print:text-black">{record.semCQPA.toFixed(2)}</td>
                                 <td className="px-5 py-3 text-right">

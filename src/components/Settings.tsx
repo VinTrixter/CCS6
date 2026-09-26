@@ -14,12 +14,10 @@ export default function Settings() {
     const [auditFilters, setAuditFilters] = useState({ start: "", end: "", user: "", action: "", target: "" });
     const [isSaving, setIsSaving] = useState(false);
 
-    // Dynamic New Term & Retention Policy State
     const [startYear, setStartYear] = useState<string>("");
     const endYear = startYear.length === 4 ? (parseInt(startYear) + 1).toString() : "";
     const [sem, setSem] = useState<string>("1st Semester");
 
-    // Global Boundaries State
     const [sysBounds, setSysBounds] = useState({
         op: systemSettings?.probationThreshold || 2.0,
         ats: systemSettings?.atsThreshold || 1.0
@@ -41,7 +39,6 @@ export default function Settings() {
         }
     }, [pendingSettingsTab, setPendingSettingsTab]);
 
-    // FIXED: Using a timeout correctly mimics the codebase's established pattern for safely updating state from effects
     useEffect(() => {
         if (systemSettings) {
             const timer = setTimeout(() => {
@@ -80,13 +77,26 @@ export default function Settings() {
     const handleProfileSave = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!activeUser) return;
+
+        const firstName = activeUser.userFirstName.trim();
+        const lastName = activeUser.userLastName.trim();
+
+        if (!firstName || !lastName) {
+            return alert("Names cannot be empty or just spaces.");
+        }
+
+        const nameRegex = /^[A-Za-z\s\-ñÑ]+$/;
+        if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+            return alert("Names must only contain letters, spaces, and hyphens.");
+        }
+
         setIsSaving(true);
 
         const { error } = await backendAPI.updateUserProfile(
             activeUser.userID,
-            activeUser.userFirstName,
-            activeUser.userMiddleName || null,
-            activeUser.userLastName
+            firstName,
+            activeUser.userMiddleName?.trim() || null,
+            lastName
         );
 
         if (error) {
@@ -167,7 +177,6 @@ export default function Settings() {
         setIsSaving(false);
     };
 
-    // FIXED: Parameterless catch block entirely bypasses unused variable linting rules
     const filteredLogs = auditLogs.filter(log => {
         try {
             if (!log.timestamp) return false;
@@ -220,7 +229,6 @@ export default function Settings() {
                             <h2 className="mb-6 text-lg font-bold text-slate-800 dark:text-slate-100">Global Environment Variables</h2>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                                {/* LEFT COLUMN */}
                                 <div className="flex flex-col gap-6">
                                     <form onSubmit={handleSystemSave} className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5 transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-slate-800 dark:text-slate-200">Active Academic Term</label>
@@ -291,7 +299,6 @@ export default function Settings() {
                                     </form>
                                 </div>
 
-                                {/* RIGHT COLUMN */}
                                 <div className="flex flex-col gap-6">
                                     <form onSubmit={handleBoundsSave} className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5 transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-slate-800 dark:text-slate-200">Academic Standing Boundaries (CQPA)</label>

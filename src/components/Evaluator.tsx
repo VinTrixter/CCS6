@@ -1,7 +1,7 @@
 // src/components/Evaluator.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { useStore } from "../store/store";
-import type { PROGRAM_COURSE } from "../store/types";
+import type { PROGRAM_COURSE, TERM_STANDING } from "../store/types";
 import { backendAPI, type EnrichedGradeRow, type EnrichedStudent } from "../backend/api";
 import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
@@ -40,7 +40,6 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
 };
 
 export default function Evaluator() {
-    // FIXED: Extracted pendingLocalTerm and setPendingLocalTerm to enable Term Warping
     const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms, retentionPolicies, pendingLocalTerm, setPendingLocalTerm } = useStore();
 
     const selectedStudent = focusedStudentID ? students.find(s => s.studentID === focusedStudentID) || null : null;
@@ -105,6 +104,9 @@ export default function Evaluator() {
     const localTermDetails = terms.find(t => t.termID === localTerm);
     const activeTermObj = terms.find(t => t.termID === activeTerm);
 
+    // FIXED: Ensure demographic header accurately warps to the snapshotted year level of the selected historical term
+    const displayYearLevel = termStanding?.yearLevel || Math.max(1, parseInt(localTermDetails?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+
     const availableTerms = terms.filter(t => {
         if (!activeTermObj) return false;
         if (selectedStudent && selectedStudent.yearEnrolled) {
@@ -125,7 +127,6 @@ export default function Evaluator() {
         setLocalTerm(activeTerm);
     }, [activeTerm, selectedStudent?.studentID]);
 
-    // FIXED: Dedicated hook intercepting Term Warping commands from the Dashboard
     useEffect(() => {
         if (pendingLocalTerm && localTerm !== pendingLocalTerm) {
             setLocalTerm(pendingLocalTerm);
@@ -182,8 +183,8 @@ export default function Evaluator() {
         if (!activeUser || !selectedStudent || !localTermDetails) return;
         setIsLoading(true);
 
-        const { data: newRecords, newStanding, error } = await backendAPI.generateAutoPopulateRecords(
-            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID
+        const { data: newRecords, newStanding, updatedStudentYearLevel, error } = await backendAPI.generateAutoPopulateRecords(
+            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings
         );
 
         if (error) {
@@ -192,6 +193,11 @@ export default function Evaluator() {
             setRecords([...records, ...newRecords]);
             if (newStanding) {
                 setStandings([...standings, newStanding]);
+            }
+            if (updatedStudentYearLevel !== undefined) {
+                const updated = { ...selectedStudent, yearLevel: updatedStudentYearLevel };
+                setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
+                setSelectedStudent(updated);
             }
             pushAudit(`AUTO_POPULATED_GRADES_${localTerm}`, selectedStudent.studentID);
         }
@@ -204,7 +210,7 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
-        const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
+        const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             courseCode, "", undefined, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms, retentionPolicies
         );
@@ -212,6 +218,11 @@ export default function Evaluator() {
         if (error) return alert(error);
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
+        if (updatedYearLevel !== undefined) {
+            const updated = { ...selectedStudent, yearLevel: updatedYearLevel };
+            setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
+            setSelectedStudent(updated);
+        }
         pushAudit(`ADDED_SUBJECT_${localTerm}`, selectedStudent.studentID);
         setShowExtraCourseDropdown(false);
         setCourseSearch("");
@@ -222,7 +233,7 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
-        const { recordsData, standingsData, error } = await backendAPI.upsertGrade(
+        const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             code, val, recordID, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms, retentionPolicies
         );
@@ -230,6 +241,11 @@ export default function Evaluator() {
         if (error) return alert(error);
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
+        if (updatedYearLevel !== undefined) {
+            const updated = { ...selectedStudent, yearLevel: updatedYearLevel };
+            setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
+            setSelectedStudent(updated);
+        }
         if (!recordID) pushAudit("ENCODED_NEW_GRADE", selectedStudent.studentID);
     };
 
@@ -238,7 +254,7 @@ export default function Evaluator() {
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
         if (!activeProgram) return;
 
-        const { recordsData, standingsData, error } = await backendAPI.deleteGradeRow(
+        const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.deleteGradeRow(
             recordID, records, selectedStudent, localTerm,
             programCourses, courses, activeProgram, standings, terms, retentionPolicies
         );
@@ -246,6 +262,11 @@ export default function Evaluator() {
         if (error) return alert(error);
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
+        if (updatedYearLevel !== undefined) {
+            const updated = { ...selectedStudent, yearLevel: updatedYearLevel };
+            setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
+            setSelectedStudent(updated);
+        }
         setDismissedCourses([...dismissedCourses, code]);
         pushAudit("DELETED_GRADE_RECORD", recordID);
     };
@@ -258,10 +279,20 @@ export default function Evaluator() {
             return alert("Invalid Student ID format. It must contain at least 7 digits (e.g., XX-X-XXXX).");
         }
 
-        if (!formData.firstName || !formData.lastName) return alert("Required fields missing.");
+        const firstName = formData.firstName.trim();
+        const lastName = formData.lastName.trim();
+
+        if (!firstName || !lastName) {
+            return alert("Names cannot be empty or just spaces.");
+        }
+
+        const nameRegex = /^[A-Za-z\s\-ñÑ]+$/;
+        if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+            return alert("Names must only contain letters, spaces, and hyphens.");
+        }
 
         const newStudent: EnrichedStudent = {
-            studentID: formData.studentID, studFirstName: formData.firstName, studMiddleName: formData.middleName, studLastName: formData.lastName,
+            studentID: formData.studentID, studFirstName: firstName, studMiddleName: formData.middleName.trim(), studLastName: lastName,
             shsTrack: formData.shsTrack as EnrichedStudent["shsTrack"], yearLevel: Number(formData.yearLevel) as EnrichedStudent["yearLevel"], accountStatus: "Active", programCode: formData.programCode,
             yearEnrolled: Number(formData.yearEnrolled)
         };
@@ -275,12 +306,32 @@ export default function Evaluator() {
     };
 
     const handleUpdateProfile = async () => {
-        if (!editFormData || !editFormData.studFirstName.trim() || !editFormData.studLastName.trim()) return alert("Names cannot be empty.");
-        const { data, error } = await backendAPI.updateStudent(editFormData, students);
+        if (!editFormData) return;
+
+        const firstName = editFormData.studFirstName.trim();
+        const lastName = editFormData.studLastName.trim();
+
+        if (!firstName || !lastName) {
+            return alert("Names cannot be empty or just spaces.");
+        }
+
+        const nameRegex = /^[A-Za-z\s\-ñÑ]+$/;
+        if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+            return alert("Names must only contain letters, spaces, and hyphens.");
+        }
+
+        const updatedStudent: EnrichedStudent = {
+            ...editFormData,
+            studFirstName: firstName,
+            studLastName: lastName,
+            studMiddleName: editFormData.studMiddleName?.trim() || ""
+        };
+
+        const { data, error } = await backendAPI.updateStudent(updatedStudent, students, activeTerm);
         if (error) return alert(error);
         if (data) setStudents(data);
-        setSelectedStudent(editFormData);
-        pushAudit("UPDATED_STUDENT_RECORD", editFormData.studentID);
+        setSelectedStudent(updatedStudent);
+        pushAudit("UPDATED_STUDENT_RECORD", updatedStudent.studentID);
         setIsEditingProfile(false);
     };
 
@@ -326,6 +377,17 @@ export default function Evaluator() {
         !(progFilterYear !== "All" && pc.yearLevel.toString() !== progFilterYear) &&
         !(progFilterSem !== "All" && pc.termSem !== progFilterSem)
     );
+
+    // FIXED: Strict Academic History Grouping eradicates the global profile contamination
+    const groupedHistory = historyStandings.reduce((acc, ts) => {
+        const term = terms.find(t => t.termID === ts.termID);
+        const yLvl = ts.yearLevel || Math.max(1, parseInt(term?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+        if (!acc[yLvl]) acc[yLvl] = [];
+        acc[yLvl].push(ts);
+        return acc;
+    }, {} as Record<number, TERM_STANDING[]>);
+
+    const sortedYears = Object.keys(groupedHistory).map(Number).sort((a, b) => b - a);
 
     return (
         <div className="flex w-full flex-col gap-6 p-6 lg:h-full lg:flex-row lg:overflow-hidden lg:p-8">
@@ -442,7 +504,7 @@ export default function Evaluator() {
                                                         value={selectedStudent.accountStatus}
                                                         onChange={async (e) => {
                                                             const updated = {...selectedStudent, accountStatus: e.target.value as "Active" | "Inactive" | "Graduated"};
-                                                            const { data, error } = await backendAPI.updateStudent(updated, students);
+                                                            const { data, error } = await backendAPI.updateStudent(updated, students, activeTerm);
                                                             if (error) return alert(error);
                                                             if (data) setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
                                                             setSelectedStudent(updated);
@@ -457,7 +519,7 @@ export default function Evaluator() {
                                                 </div>
                                                 <div className="col-span-3 mt-2 grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-4">
                                                     <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Program</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedStudent.programCode}</div></div>
-                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Year Lvl</div><div className="font-medium text-slate-700 dark:text-slate-300">Year {selectedStudent.yearLevel}</div></div>
+                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Year Lvl</div><div className="font-medium text-slate-700 dark:text-slate-300">Year {displayYearLevel}</div></div>
                                                     <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Enrolled</div><div className="font-medium text-slate-700 dark:text-slate-300">AY {selectedStudent.yearEnrolled}</div></div>
                                                     <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Term Profile</div><div className="font-medium text-slate-700 dark:text-slate-300">{localTermDetails?.termSem}</div></div>
                                                 </div>
@@ -520,7 +582,6 @@ export default function Evaluator() {
                                                                 if (displayRows.some(r => r.courseCode === pc.courseCode)) return false;
                                                                 if (!pc.courseCode.toLowerCase().includes(courseSearch.toLowerCase())) return false;
 
-                                                                // FIXED: Locks Major subjects strictly to their assigned curriculum semester
                                                                 if (pc.majorMinorClassif === 'Major' && localTermDetails && pc.termSem !== localTermDetails.termSem) return false;
 
                                                                 const cohortPolicy = retentionPolicies.find(p => p.programCode === selectedStudent?.programCode && p.effectiveYear === selectedStudent?.yearEnrolled);
@@ -584,59 +645,76 @@ export default function Evaluator() {
                                     <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">QPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                    {historyStandings.map(ts => {
-                                        const term = terms.find(t => t.termID === ts.termID);
-                                        const isExpanded = expandedTerms[ts.termID];
+                                    {sortedYears.map(year => (
+                                        <React.Fragment key={`ylvl-${year}`}>
+                                            <tr className="bg-slate-100 dark:bg-slate-800/80">
+                                                <td colSpan={4} className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                    Year Level {year}
+                                                </td>
+                                            </tr>
+                                            {groupedHistory[year].sort((a,b) => {
+                                                const tA = terms.find(t=>t.termID===a.termID);
+                                                const tB = terms.find(t=>t.termID===b.termID);
+                                                if(!tA || !tB) return 0;
+                                                if (tA.termSY !== tB.termSY) return tB.termSY.localeCompare(tA.termSY);
+                                                const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+                                                return semW[tB.termSem] - semW[tA.termSem];
+                                            }).map(ts => {
+                                                const term = terms.find(t => t.termID === ts.termID);
+                                                const isExpanded = expandedTerms[ts.termID];
 
-                                        let histStatus = ts.termAcademicStatus as string;
-                                        if (histStatus.toUpperCase() === 'ADVISED-TO-SHIFT') histStatus = 'Advised to Shift';
-                                        if (histStatus.toUpperCase() === 'ON-PROBATION') histStatus = 'On-Probation';
-                                        if (histStatus.toUpperCase() === 'REGULAR') histStatus = 'Regular';
-                                        if (histStatus.toUpperCase() === 'UNENCODED') histStatus = 'Unencoded';
+                                                let histStatus = ts.termAcademicStatus as string;
+                                                if (histStatus.toUpperCase() === 'ADVISED-TO-SHIFT') histStatus = 'Advised to Shift';
+                                                if (histStatus.toUpperCase() === 'ON-PROBATION') histStatus = 'On-Probation';
+                                                if (histStatus.toUpperCase() === 'REGULAR') histStatus = 'Regular';
+                                                if (histStatus.toUpperCase() === 'UNENCODED') histStatus = 'Unencoded';
 
-                                        return (
-                                            <React.Fragment key={ts.standingID}>
-                                                <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.termID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                    <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800 dark:text-slate-200">{term?.termSem}</div><div className="text-xs text-slate-500 dark:text-slate-400">AY {term?.termSY}</div></div></td>
-                                                    <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.semCQPA.toFixed(2)}</td>
-                                                    <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${histStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : histStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : histStatus === 'Unencoded' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{histStatus}</span></td>
-                                                </tr>
-                                                {isExpanded && (
-                                                    <tr>
-                                                        <td colSpan={4} className="bg-slate-50/50 dark:bg-slate-900/50 p-0 border-b border-slate-100 dark:border-slate-700">
-                                                            <div className="px-10 py-4">
-                                                                <table className="w-full text-xs text-left text-slate-600 dark:text-slate-400">
-                                                                    <thead>
-                                                                    <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500">
-                                                                        <th className="py-2">Course Code</th>
-                                                                        <th className="py-2">Units</th>
-                                                                        <th className="py-2 text-right">Final Grade</th>
-                                                                    </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                    {records.filter(r => r.studentID === selectedStudent?.studentID && r.termID === ts.termID).filter(rec => {
-                                                                        if (rec.finalGrade !== null || rec.gradeRemarks !== null) return true;
-                                                                        const hasGradedDuplicate = records.some(dup => dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
-                                                                        return !hasGradedDuplicate;
-                                                                    }).map(rec => {
-                                                                        const pc = programCourses.find(p => p.programCourseID === rec.programCourseID);
-                                                                        return (
-                                                                            <tr key={rec.recordID} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
-                                                                                <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
-                                                                                <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
-                                                                                <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade) : (rec.gradeRemarks || '-')}</td>
+                                                return (
+                                                    <React.Fragment key={ts.standingID}>
+                                                        <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.termID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                            <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800 dark:text-slate-200">{term?.termSem}</div><div className="text-xs text-slate-500 dark:text-slate-400">AY {term?.termSY}</div></div></td>
+                                                            <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.semCQPA.toFixed(2)}</td>
+                                                            <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${histStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : histStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : histStatus === 'Unencoded' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{histStatus}</span></td>
+                                                        </tr>
+                                                        {isExpanded && (
+                                                            <tr>
+                                                                <td colSpan={4} className="bg-slate-50/50 dark:bg-slate-900/50 p-0 border-b border-slate-100 dark:border-slate-700">
+                                                                    <div className="px-10 py-4">
+                                                                        <table className="w-full text-xs text-left text-slate-600 dark:text-slate-400">
+                                                                            <thead>
+                                                                            <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500">
+                                                                                <th className="py-2">Course Code</th>
+                                                                                <th className="py-2">Units</th>
+                                                                                <th className="py-2 text-right">Final Grade</th>
                                                                             </tr>
-                                                                        )
-                                                                    })}
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </React.Fragment>
-                                        );
-                                    })}
+                                                                            </thead>
+                                                                            <tbody>
+                                                                            {records.filter(r => r.studentID === selectedStudent?.studentID && r.termID === ts.termID).filter(rec => {
+                                                                                if (rec.finalGrade !== null || rec.gradeRemarks !== null) return true;
+                                                                                const hasGradedDuplicate = records.some(dup => dup.studentID === selectedStudent?.studentID && dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
+                                                                                return !hasGradedDuplicate;
+                                                                            }).map(rec => {
+                                                                                const pc = programCourses.find(p => p.programCourseID === rec.programCourseID);
+                                                                                return (
+                                                                                    <tr key={rec.recordID} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                                                                        <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
+                                                                                        <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
+                                                                                        <td className="py-2 text-right font-mono font-bold text-slate-800 dark:text-slate-200">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade) : (rec.gradeRemarks || '-')}</td>
+                                                                                    </tr>
+                                                                                )
+                                                                            })}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </React.Fragment>
+                                    ))}
+                                    {historyStandings.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">No academic history records found.</td></tr>}
                                     </tbody>
                                 </table>
                             )}

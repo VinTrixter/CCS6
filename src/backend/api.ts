@@ -4,7 +4,7 @@ import type {
     STUDENT, DEGREE_PROGRAM, COURSE, COMPASS_USER,
     PROGRAM_COURSE, TERM_STANDING, ADVISING_REMARK, ACADEMIC_RECORD,
     COURSE_PREREQUISITE, ACADEMIC_TERM, AUDIT_LOG, RETENTION_POLICY, SYSTEM_SETTINGS,
-    MANUAL_REVIEW_ITEM // FIXED: Imported interface for Dashboard term warping metadata
+    MANUAL_REVIEW_ITEM
 } from '../store/types';
 
 export type EnrichedStudent = STUDENT & { programCode: string };
@@ -19,8 +19,9 @@ export interface EnrichedGradeRow {
     recordID?: string;
 }
 
-const generateID = (prefix: string) => {
-    return `${prefix}${Math.random().toString(36).substring(2, 9).toUpperCase()}`.substring(0, 10);
+// FIXED: Added maxLength limiter to satisfy strict database constraints for PC- and PR- IDs (TC 42)
+const generateID = (prefix: string, maxLength: number = 10) => {
+    return `${prefix}${Math.random().toString(36).substring(2, 9).toUpperCase()}`.substring(0, maxLength);
 };
 
 const compareTerms = (termA: ACADEMIC_TERM, termB: ACADEMIC_TERM) => {
@@ -38,7 +39,8 @@ const cascadeStandings = (
     systemSettings: { probationThreshold: number, atsThreshold: number },
     currentStandings: TERM_STANDING[],
     terms: ACADEMIC_TERM[],
-    modifiedTermID: string
+    modifiedTermID: string,
+    skipYearLevelAutoCalc: boolean = false // FIXED: Prevents grade edits from overwriting manual year level overrides
 ) => {
     const studentTermIDs = new Set(updatedRecords.filter(r => r.studentID === student.studentID).map(r => r.termID));
     studentTermIDs.add(modifiedTermID);
@@ -73,7 +75,30 @@ const cascadeStandings = (
             return rTerm && compareTerms(rTerm, activeTermObj) <= 0;
         });
 
-        // Term QPA: Strict average of the active term (Uses termRecords)
+        const existingStanding = currentStandings.find(ts => ts.studentID === student.studentID && ts.termID === activeTerm);
+
+        // FIXED: Earliest Major Engine defaults to chronological math for past terms if no snapshot exists
+        let evaluatedYearLevel = existingStanding?.yearLevel;
+        if (!evaluatedYearLevel) {
+            if (activeTermObj.isCurrent) {
+                evaluatedYearLevel = student.yearLevel;
+            } else {
+                const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
+                evaluatedYearLevel = Math.max(1, termStartYear - student.yearEnrolled + 1);
+            }
+        }
+
+        if (!skipYearLevelAutoCalc && activeTerm === modifiedTermID) {
+            const majorYearLevels = termRecords
+                .map(r => programCourses.find(pc => pc.programCourseID === r.programCourseID))
+                .filter(pc => pc && pc.majorMinorClassif === 'Major')
+                .map(pc => pc!.yearLevel);
+
+            if (majorYearLevels.length > 0) {
+                evaluatedYearLevel = Math.min(...majorYearLevels);
+            }
+        }
+
         let termPoints = 0; let termUnits = 0;
         termRecords.forEach(record => {
             const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
@@ -86,8 +111,6 @@ const cascadeStandings = (
         });
         const termQPA = termUnits > 0 ? (termPoints / termUnits) : 0.0;
 
-        // FIXED: CQPA Implements Highest-Grade Replacement for Retakes
-        // Directly evaluates raw historical records using a normalized code key to ensure old failures are eclipsed.
         const highestGradeMap = new Map<string, number>();
         rawHistRecords.forEach(record => {
             const pc = programCourses.find(p => p.programCourseID === record.programCourseID);
@@ -109,14 +132,13 @@ const cascadeStandings = (
         });
         const semCQPA = cqpaUnits > 0 ? (cqpaPoints / cqpaUnits) : 0.0;
 
-        // FIXED: Major 2-Strike Counter accurately detects numerical and remark-based failures
         let majorStrikeTriggered = false;
         const majorFailures = new Map<string, number>();
         rawHistRecords.forEach(r => {
             const pc = programCourses.find(p => p.programCourseID === r.programCourseID);
             if (pc && pc.majorMinorClassif === 'Major') {
                 const isNumericalFail = r.finalGrade !== null && r.finalGrade < majorThreshold;
-                const isRemarkFail = r.finalGrade === null && r.isFailed; // E.g., NG, D
+                const isRemarkFail = r.finalGrade === null && r.isFailed;
 
                 if (isNumericalFail || isRemarkFail) {
                     const normalizedCode = pc.courseCode.replace(/\s+/g, "").toUpperCase();
@@ -158,12 +180,11 @@ const cascadeStandings = (
             }
         }
 
-        const existingStanding = currentStandings.find(ts => ts.studentID === student.studentID && ts.termID === activeTerm);
         const standingID = existingStanding ? existingStanding.standingID : generateID('ST-');
 
         newStandings.push({
             standingID, termQPA, semCQPA, termAcademicStatus: status,
-            isConsecutiveOP, studentID: student.studentID, termID: activeTerm
+            isConsecutiveOP, yearLevel: evaluatedYearLevel, studentID: student.studentID, termID: activeTerm
         });
     }
 
@@ -171,7 +192,6 @@ const cascadeStandings = (
 };
 
 export const backendAPI = {
-    // FIXED: Maps metadata directly to MANUAL_REVIEW_ITEM for term warping capability
     getManualReviewList(
         standings: TERM_STANDING[], remarks: ADVISING_REMARK[], activeTerm: string,
         activeUser: COMPASS_USER | null, records?: ACADEMIC_RECORD[], terms?: ACADEMIC_TERM[]
@@ -195,7 +215,6 @@ export const backendAPI = {
             }
         });
 
-        // Scan for unresolved INCs from strictly older semesters
         if (records && terms) {
             const activeTermObj = terms.find(t => t.termID === activeTerm);
             if (activeTermObj) {
@@ -462,18 +481,30 @@ export const backendAPI = {
 
     async generateAutoPopulateRecords(
         student: EnrichedStudent, activeTerm: string, termDetails: ACADEMIC_TERM,
-        programCourses: PROGRAM_COURSE[], records: ACADEMIC_RECORD[], userID: string
+        programCourses: PROGRAM_COURSE[], records: ACADEMIC_RECORD[], userID: string,
+        globalActiveTerm: string, standings: TERM_STANDING[]
     ) {
+        // FIXED: Context-Aware Baseline Year Level ensures we fetch the chronologically accurate curriculum for past terms
+        let targetYearLevel = student.yearLevel;
+        if (!termDetails.isCurrent) {
+            const exist = standings.find(s => s.studentID === student.studentID && s.termID === activeTerm);
+            if (exist && exist.yearLevel) {
+                targetYearLevel = exist.yearLevel;
+            } else {
+                const termStartYear = parseInt(termDetails.termSY.split('-')[0]);
+                targetYearLevel = Math.max(1, termStartYear - student.yearEnrolled + 1);
+            }
+        }
+
         const curriculum = programCourses.filter(pc => {
             const pcYear = Number(pc.yearLevel) || Number((pc as any).yrLevel);
-            const studentYear = Number(student.yearLevel);
             return pc.programCode === student.programCode &&
-                pcYear === studentYear &&
+                pcYear === targetYearLevel &&
                 pc.termSem === termDetails.termSem;
         });
 
         if (curriculum.length === 0) {
-            return { data: [], newStanding: null, error: `No courses found in the curriculum template for ${student.programCode}, Year ${student.yearLevel}, ${termDetails.termSem}. Please map these subjects in the Curriculum Manager.` };
+            return { data: [], newStanding: null, updatedStudentYearLevel: undefined, error: `No courses found in the curriculum template for ${student.programCode}, Year ${targetYearLevel}, ${termDetails.termSem}. Please map these subjects in the Curriculum Manager.` };
         }
 
         const existingRecords = records.filter(r => r.studentID === student.studentID && r.termID === activeTerm);
@@ -493,24 +524,34 @@ export const backendAPI = {
 
         if (newRecords.length > 0) {
             const { error } = await supabase.from('ACADEMIC_RECORD').insert(newRecords);
-            if (error) return { data: [], newStanding: null, error: error.message };
+            if (error) return { data: [], newStanding: null, updatedStudentYearLevel: undefined, error: error.message };
+
+            const majorYearLevels = curriculum.filter(pc => pc.majorMinorClassif === 'Major').map(pc => pc.yearLevel);
+            const calculatedYearLevel = majorYearLevels.length > 0 ? Math.min(...majorYearLevels) : targetYearLevel;
 
             const basicStanding: TERM_STANDING = {
                 standingID: generateID('ST-'), termQPA: 0, semCQPA: 0,
                 termAcademicStatus: 'Unencoded', isConsecutiveOP: false,
+                yearLevel: calculatedYearLevel,
                 studentID: student.studentID, termID: activeTerm
             };
+
+            let updatedStudentYearLevel = undefined;
+            if (activeTerm === globalActiveTerm && calculatedYearLevel !== student.yearLevel) {
+                await supabase.from('STUDENT').update({ yearLevel: calculatedYearLevel }).eq('studentID', student.studentID);
+                updatedStudentYearLevel = calculatedYearLevel;
+            }
 
             const { data: exist } = await supabase.from('TERM_STANDING').select('*').eq('studentID', student.studentID).eq('termID', activeTerm);
             if (!exist || exist.length === 0) {
                 await supabase.from('TERM_STANDING').insert([basicStanding]);
-                return { data: newRecords, newStanding: basicStanding, error: null };
+                return { data: newRecords, newStanding: basicStanding, updatedStudentYearLevel, error: null };
             }
 
-            return { data: newRecords, newStanding: null, error: null };
+            return { data: newRecords, newStanding: null, updatedStudentYearLevel, error: null };
         }
 
-        return { data: [], newStanding: null, error: "All curriculum subjects for this term are already populated on the screen." };
+        return { data: [], newStanding: null, updatedStudentYearLevel: undefined, error: "All curriculum subjects for this term are already populated on the screen." };
     },
 
     async upsertGrade(
@@ -522,8 +563,6 @@ export const backendAPI = {
 
         const upperVal = val.trim().toUpperCase();
 
-        // REVISED: An empty string now safely nullifies the grade instead of deleting the row.
-        // This restores the ability to edit grades, and allows the "X" button to appear.
         if (upperVal === "") {
             finalGrade = null;
             gradeRemarks = null;
@@ -541,7 +580,7 @@ export const backendAPI = {
             } else {
                 const parsedGrade = Number(upperVal);
                 if (isNaN(parsedGrade) || parsedGrade < 0.0 || parsedGrade > 4.0) {
-                    return { recordsData: null, standingsData: null, error: "Invalid input. Please enter a numerical grade between 0.0 and 4.0, or a valid remark." };
+                    return { recordsData: null, standingsData: null, updatedYearLevel: undefined, error: "Invalid input. Please enter a numerical grade between 0.0 and 4.0, or a valid remark." };
                 }
                 finalGrade = parsedGrade;
                 if (finalGrade < threshold) isFailed = true;
@@ -551,28 +590,31 @@ export const backendAPI = {
         let updatedRecord: ACADEMIC_RECORD;
         const updatedRecordsArray = [...currentRecords];
 
+        // FIXED: Determines if action is an edit. If so, skips auto-calculating year level to preserve overrides.
+        const skipYearLevelAutoCalc = !!recordID;
+
         if (recordID) {
             updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks: gradeRemarks || null };
             const { error } = await supabase.from('ACADEMIC_RECORD').update({ finalGrade, isFailed, gradeRemarks }).eq('recordID', recordID);
-            if (error) return { recordsData: null, standingsData: null, error: error.message };
+            if (error) return { recordsData: null, standingsData: null, updatedYearLevel: undefined, error: error.message };
             const index = updatedRecordsArray.findIndex(r => r.recordID === recordID);
             updatedRecordsArray[index] = updatedRecord;
         } else {
             const pc = programCourses.find(p => p.programCode === student.programCode && p.courseCode === courseCode);
-            if (!pc) return { recordsData: null, standingsData: null, error: "Course not found in curriculum." };
+            if (!pc) return { recordsData: null, standingsData: null, updatedYearLevel: undefined, error: "Course not found in curriculum." };
             updatedRecord = {
                 recordID: generateID('RC-'), finalGrade, isFailed, gradeRemarks: gradeRemarks || null, dateEncoded: new Date().toISOString().split('T')[0],
                 programCourseID: pc.programCourseID, termID: activeTerm, studentID: student.studentID, userID
             };
             const { error } = await supabase.from('ACADEMIC_RECORD').insert([{ ...updatedRecord, gradeRemarks }]);
-            if (error) return { recordsData: null, standingsData: null, error: error.message };
+            if (error) return { recordsData: null, standingsData: null, updatedYearLevel: undefined, error: error.message };
             updatedRecordsArray.push(updatedRecord);
         }
 
         const { data: sysRes } = await supabase.from('SYSTEM_SETTINGS').select('*').eq('id', 'global').single();
         const systemSettings = sysRes || { probationThreshold: 2.0, atsThreshold: 1.0 };
 
-        const { newStandings, updatedStandingsArray } = cascadeStandings(student, updatedRecordsArray, programCourses, courses, retentionPolicies, systemSettings, currentStandings, terms, activeTerm);
+        const { newStandings, updatedStandingsArray } = cascadeStandings(student, updatedRecordsArray, programCourses, courses, retentionPolicies, systemSettings, currentStandings, terms, activeTerm, skipYearLevelAutoCalc);
 
         const dbStandings = newStandings.map(ns => ({
             ...ns,
@@ -580,9 +622,19 @@ export const backendAPI = {
         }));
 
         const { error: standError } = await supabase.from('TERM_STANDING').upsert(dbStandings, { onConflict: 'standingID' });
-        if (standError) return { recordsData: null, standingsData: null, error: standError.message };
+        if (standError) return { recordsData: null, standingsData: null, updatedYearLevel: undefined, error: standError.message };
 
-        return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, error: null };
+        let syncedYearLevel = undefined;
+        const currentTermObj = terms.find(t => t.isCurrent);
+        if (!skipYearLevelAutoCalc && currentTermObj && activeTerm === currentTermObj.termID) {
+            const activeStanding = newStandings.find(ns => ns.termID === activeTerm);
+            if (activeStanding && activeStanding.yearLevel !== student.yearLevel) {
+                await supabase.from('STUDENT').update({ yearLevel: activeStanding.yearLevel }).eq('studentID', student.studentID);
+                syncedYearLevel = activeStanding.yearLevel;
+            }
+        }
+
+        return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, updatedYearLevel: syncedYearLevel, error: null };
     },
 
     async deleteGradeRow(
@@ -591,14 +643,14 @@ export const backendAPI = {
         currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[]
     ) {
         const { error } = await supabase.from('ACADEMIC_RECORD').delete().eq('recordID', recordID);
-        if (error) return { recordsData: null, standingsData: null, error: error.message };
+        if (error) return { recordsData: null, standingsData: null, updatedYearLevel: undefined, error: error.message };
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
 
         const { data: sysRes } = await supabase.from('SYSTEM_SETTINGS').select('*').eq('id', 'global').single();
         const systemSettings = sysRes || { probationThreshold: 2.0, atsThreshold: 1.0 };
 
-        const { newStandings, updatedStandingsArray } = cascadeStandings(student, updatedRecordsArray, programCourses, courses, retentionPolicies, systemSettings, currentStandings, terms, activeTerm);
+        const { newStandings, updatedStandingsArray } = cascadeStandings(student, updatedRecordsArray, programCourses, courses, retentionPolicies, systemSettings, currentStandings, terms, activeTerm, false);
 
         const dbStandings = newStandings.map(ns => ({
             ...ns,
@@ -606,7 +658,17 @@ export const backendAPI = {
         }));
         await supabase.from('TERM_STANDING').upsert(dbStandings, { onConflict: 'standingID' });
 
-        return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, error: null };
+        let syncedYearLevel = undefined;
+        const currentTermObj = terms.find(t => t.isCurrent);
+        if (currentTermObj && activeTerm === currentTermObj.termID) {
+            const activeStanding = newStandings.find(ns => ns.termID === activeTerm);
+            if (activeStanding && activeStanding.yearLevel !== student.yearLevel) {
+                await supabase.from('STUDENT').update({ yearLevel: activeStanding.yearLevel }).eq('studentID', student.studentID);
+                syncedYearLevel = activeStanding.yearLevel;
+            }
+        }
+
+        return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, updatedYearLevel: syncedYearLevel, error: null };
     },
 
     async createStudent(newStudent: EnrichedStudent, currentStudents: EnrichedStudent[]) {
@@ -637,7 +699,7 @@ export const backendAPI = {
         return { data: updatedArray, error: null };
     },
 
-    async updateStudent(updatedData: EnrichedStudent, currentStudents: EnrichedStudent[]) {
+    async updateStudent(updatedData: EnrichedStudent, currentStudents: EnrichedStudent[], activeTerm: string) {
         const baseStudent = {
             studFirstName: updatedData.studFirstName,
             studMiddleName: updatedData.studMiddleName || null,
@@ -650,6 +712,14 @@ export const backendAPI = {
 
         const { error: studentError } = await supabase.from('STUDENT').update(baseStudent).eq('studentID', updatedData.studentID);
         if (studentError) return { data: null, error: studentError.message };
+
+        if (activeTerm) {
+            const { error: tsError } = await supabase.from('TERM_STANDING')
+                .update({ yearLevel: updatedData.yearLevel })
+                .eq('studentID', updatedData.studentID)
+                .eq('termID', activeTerm);
+            if (tsError) console.error("Failed to sync year level to active term standing:", tsError.message);
+        }
 
         const existingStudent = currentStudents.find(s => s.studentID === updatedData.studentID);
         if (existingStudent && existingStudent.programCode !== updatedData.programCode) {
@@ -734,18 +804,11 @@ export const backendAPI = {
     ) {
         const rawPrereqs = payload.prerequisites.split(',').map(s => s.trim()).filter(s => s !== "");
 
-        for (const rawCode of rawPrereqs) {
-            const normRaw = rawCode.replace(/\s+/g, "").toUpperCase();
-            const existsGlobally = courses.some(c => c.courseCode.replace(/\s+/g, "").toUpperCase() === normRaw);
-            if (!existsGlobally) {
-                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: Course '${rawCode}' does not exist in the institutional database.` };
-            }
-        }
+        const newPrereqs: COURSE_PREREQUISITE[] = [];
 
-        const baseCourse: COURSE = { courseCode: payload.courseCode, courseTitle: payload.title, courseUnits: Number(payload.units) };
-
+        // FIXED: Explicitly set maxLength to 7 to satisfy database schema bounds (TC 42)
         const progCourseDB = {
-            programCourseID: editingCourseCode ? programCourses.find(pc => pc.courseCode === editingCourseCode && pc.programCode === program.programCode)!.programCourseID : generateID('PC-'),
+            programCourseID: editingCourseCode ? programCourses.find(pc => pc.courseCode === editingCourseCode && pc.programCode === program.programCode)!.programCourseID : generateID('PC-', 7),
             programCode: program.programCode,
             courseCode: payload.courseCode,
             majorMinorClassif: payload.classification as "Major" | "Minor",
@@ -753,6 +816,47 @@ export const backendAPI = {
             yrLevel: Number(payload.yearLevel),
             termSem: payload.semester as "1st Semester" | "2nd Semester" | "Midyear"
         };
+
+        const newProgCourses = editingCourseCode ? programCourses.map(pc => pc.programCourseID === progCourseDB.programCourseID ? { ...progCourseDB, yearLevel: progCourseDB.yrLevel, majorMinorClassif: progCourseDB.majorMinorClassif as "Major" | "Minor" } : pc) : [...programCourses, { ...progCourseDB, yearLevel: progCourseDB.yrLevel, majorMinorClassif: progCourseDB.majorMinorClassif as "Major" | "Minor" }];
+
+        const normalizedProgCourses = newProgCourses.filter(pc => pc.programCode === program.programCode).map(pc => ({
+            ...pc,
+            normalizedCode: pc.courseCode.replace(/\s+/g, "").toUpperCase()
+        }));
+
+        for (const rawCode of rawPrereqs) {
+            const normRaw = rawCode.replace(/\s+/g, "").toUpperCase();
+
+            const existsGlobally = courses.some(c => c.courseCode.replace(/\s+/g, "").toUpperCase() === normRaw);
+            if (!existsGlobally) {
+                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: Course '${rawCode}' does not exist in the institutional database.` };
+            }
+
+            const match = normalizedProgCourses.find(pc => pc.normalizedCode === normRaw);
+
+            if (!match) {
+                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: '${rawCode}' is not mapped to this program's curriculum. Please add it to the program first.` };
+            }
+            if (match.programCourseID === progCourseDB.programCourseID) {
+                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: A course cannot be a prerequisite for itself.` };
+            }
+
+            // FIXED: Strict Chronological Prerequisite checking prevents timeline paradoxes
+            const targetYear = Number(payload.yearLevel);
+            const targetSemWeight = payload.semester === "1st Semester" ? 1 : payload.semester === "2nd Semester" ? 2 : 3;
+
+            const prereqYear = Number(match.yearLevel);
+            const prereqSemWeight = match.termSem === "1st Semester" ? 1 : match.termSem === "2nd Semester" ? 2 : 3;
+
+            if (prereqYear > targetYear || (prereqYear === targetYear && prereqSemWeight >= targetSemWeight)) {
+                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: ${rawCode} is scheduled in Year ${prereqYear}, ${match.termSem}. Prerequisites must logically precede the target course.` };
+            }
+
+            // FIXED: Explicitly set maxLength to 7 to satisfy database schema bounds
+            newPrereqs.push({ prereqID: generateID('PR-', 7), programCourseID: progCourseDB.programCourseID, prereqProgramCourseID: match.programCourseID });
+        }
+
+        const baseCourse: COURSE = { courseCode: payload.courseCode, courseTitle: payload.title, courseUnits: Number(payload.units) };
 
         const existingCourse = courses.find(c => c.courseCode === payload.courseCode);
         if (!existingCourse) await supabase.from('COURSE').insert([baseCourse]);
@@ -770,30 +874,9 @@ export const backendAPI = {
             majorMinorClassif: rest.majorMinorClassif as "Major" | "Minor",
         };
 
-        const newProgCourses = editingCourseCode ? programCourses.map(pc => pc.programCourseID === progCourseFrontend.programCourseID ? progCourseFrontend : pc) : [...programCourses, progCourseFrontend];
+        const finalProgCourses = editingCourseCode ? programCourses.map(pc => pc.programCourseID === progCourseFrontend.programCourseID ? progCourseFrontend : pc) : [...programCourses, progCourseFrontend];
 
         const finalProgCourseID = progCourseDB.programCourseID;
-
-        const normalizedProgCourses = newProgCourses.filter(pc => pc.programCode === program.programCode).map(pc => ({
-            ...pc,
-            normalizedCode: pc.courseCode.replace(/\s+/g, "").toUpperCase()
-        }));
-
-        const newPrereqs: COURSE_PREREQUISITE[] = [];
-
-        for (const rawCode of rawPrereqs) {
-            const normRaw = rawCode.replace(/\s+/g, "").toUpperCase();
-            const match = normalizedProgCourses.find(pc => pc.normalizedCode === normRaw);
-
-            if (!match) {
-                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: '${rawCode}' is not mapped to this program's curriculum. Please add it to the program first.` };
-            }
-            if (match.programCourseID === finalProgCourseID) {
-                return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: `Invalid Prerequisite: A course cannot be a prerequisite for itself.` };
-            }
-
-            newPrereqs.push({ prereqID: generateID('PR-'), programCourseID: finalProgCourseID, prereqProgramCourseID: match.programCourseID });
-        }
 
         await supabase.from('COURSE_PREREQUISITE').delete().eq('programCourseID', finalProgCourseID);
 
@@ -805,7 +888,7 @@ export const backendAPI = {
         const filteredPrereqs = currentPrereqs.filter(pr => pr.programCourseID !== finalProgCourseID);
         const updatedPrereqs = [...filteredPrereqs, ...newPrereqs];
 
-        return { coursesData: newCourses, programCoursesData: newProgCourses, coursePrerequisitesData: updatedPrereqs, error: null };
+        return { coursesData: newCourses, programCoursesData: finalProgCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
     async deleteCourseFromCurriculum(
@@ -830,7 +913,6 @@ export const backendAPI = {
         return { programCoursesData: updatedProgramCourses, coursePrerequisitesData: updatedPrereqs, error: null };
     },
 
-    // FIXED: Chronological filtering mapping injected into generateReport to capture unencoded students accurately
     async generateReport(
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
         students: EnrichedStudent[], activeStandings: TERM_STANDING[], targetTermDetails?: ACADEMIC_TERM
@@ -840,6 +922,10 @@ export const backendAPI = {
 
         const data = students.filter(s => s.yearEnrolled <= targetYear).map(student => {
             const ts = activeStandings.find(st => st.studentID === student.studentID);
+
+            // FIXED: Calculate pure chronological baseline to permanently replace global profile fallback
+            const chronologicalYearLevel = Math.max(1, targetYear - student.yearEnrolled + 1);
+
             if (ts) {
                 return {
                     standingID: ts.standingID,
@@ -847,6 +933,7 @@ export const backendAPI = {
                     semCQPA: ts.semCQPA,
                     termAcademicStatus: ts.termAcademicStatus,
                     isConsecutiveOP: ts.isConsecutiveOP,
+                    yearLevel: ts.yearLevel || chronologicalYearLevel, // Strict fallback to math, not profile
                     studentID: ts.studentID,
                     termID: ts.termID,
                     student: student
@@ -858,6 +945,7 @@ export const backendAPI = {
                     semCQPA: 0.0,
                     termAcademicStatus: "Unencoded",
                     isConsecutiveOP: false,
+                    yearLevel: chronologicalYearLevel, // Strict chronological injection for synthetic rows
                     studentID: student.studentID,
                     termID: targetTermDetails.termID,
                     student: student
@@ -870,7 +958,8 @@ export const backendAPI = {
                 (statusFilter === "All Flagged" && (record.termAcademicStatus === "On-Probation" || record.termAcademicStatus === "Advised to Shift")) ||
                 record.termAcademicStatus === statusFilter;
             const matchProgram = programFilter === "All" || record.student.programCode === programFilter;
-            const matchYear = yearFilter === "All" || record.student.yearLevel.toString() === yearFilter;
+            // FIXED: Filter natively evaluates the pre-calculated, context-aware yearLevel
+            const matchYear = yearFilter === "All" || record.yearLevel.toString() === yearFilter;
             const matchAccount = accountFilter === "All" || record.student.accountStatus === accountFilter;
 
             return matchStatus && matchProgram && matchYear && matchAccount;

@@ -41,8 +41,8 @@ export default function Dashboard() {
 
     return (
         <div className="flex w-full flex-col gap-6 p-6 lg:p-8">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
+            <div className="flex flex-col md:flex-row gap-4 lg:gap-6">
+                <div className="flex-1 w-full flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
                     <div className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400"><I.Users className="h-5 w-5" /></div>
@@ -53,7 +53,7 @@ export default function Dashboard() {
                     <button onClick={() => navigateToReport("All Students")} className="border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-sky-700 dark:hover:text-sky-400">View Active Roster</button>
                 </div>
 
-                <div className="flex flex-col justify-between overflow-hidden rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-900/10 shadow-sm transition-colors">
+                <div className="flex-1 w-full flex flex-col justify-between overflow-hidden rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-900/10 shadow-sm transition-colors">
                     <div className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-500"><I.Warning className="h-5 w-5" /></div>
@@ -64,7 +64,7 @@ export default function Dashboard() {
                     <button onClick={() => navigateToReport("On-Probation")} className="border-t border-blue-200/50 dark:border-blue-900/50 bg-blue-100/30 dark:bg-blue-900/30 py-3 text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400 transition hover:bg-blue-200/50 dark:hover:bg-blue-900/60">View Flagged Records</button>
                 </div>
 
-                <div className="flex flex-col justify-between overflow-hidden rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800 shadow-sm transition-colors">
+                <div className="flex-1 w-full flex flex-col justify-between overflow-hidden rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800 shadow-sm transition-colors">
                     <div className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300"><I.ShieldAlert className="h-5 w-5" /></div>

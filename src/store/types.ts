@@ -81,6 +81,7 @@ export interface TERM_STANDING {
     semCQPA: number;
     termAcademicStatus: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
     isConsecutiveOP: boolean;
+    yearLevel?: number; // FIXED: Added for historical year level snapshotting
     studentID: string;
     termID: string;
 }
@@ -115,7 +116,6 @@ export interface SYSTEM_SETTINGS {
     atsThreshold: number;
 }
 
-// FIXED: Exported a distinct type for the Dashboard review list to carry UI navigation metadata
 export type MANUAL_REVIEW_ITEM = TERM_STANDING & {
     issueDescription: string;
     targetTermID: string;
