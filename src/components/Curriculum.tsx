@@ -122,6 +122,16 @@ export default function Curriculum() {
         setSelectedProgram(newProg);
     };
 
+    const handleDeleteProgram = async () => {
+        if (!editingProgCode || !window.confirm(`Are you sure you want to permanently delete curriculum ${editingProgCode}?`)) return;
+        setPrograms(programs.filter(p => p.programCode !== editingProgCode));
+        pushAudit("DELETED_CURRICULUM", editingProgCode);
+        setShowProgramForm(false);
+        setSelectedProgram(null);
+
+        //REVISE THIS AND ADD API.TS FUNCTION TO PERMANENTLY DELETE PROGRAM AND ITS COURSES
+    };
+
     const handleSaveCourse = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!selectedProgram) return;
