@@ -5,7 +5,8 @@ import type { ReactNode, Dispatch, SetStateAction } from "react";
 import { backendAPI, type EnrichedStudent } from "../backend/api";
 import type {
     COMPASS_USER, AUDIT_LOG, DEGREE_PROGRAM, COURSE,
-    PROGRAM_COURSE, ACADEMIC_RECORD, ADVISING_REMARK, TERM_STANDING, COURSE_PREREQUISITE, ACADEMIC_TERM
+    PROGRAM_COURSE, ACADEMIC_RECORD, ADVISING_REMARK, TERM_STANDING,
+    COURSE_PREREQUISITE, ACADEMIC_TERM, RETENTION_POLICY, SYSTEM_SETTINGS
 } from "./types";
 
 export type View = "dashboard" | "evaluator" | "curriculum" | "reports" | "settings";
@@ -25,6 +26,8 @@ interface CompassState {
     standings: TERM_STANDING[];
     terms: ACADEMIC_TERM[];
     coursePrerequisites: COURSE_PREREQUISITE[];
+    retentionPolicies: RETENTION_POLICY[];
+    systemSettings: SYSTEM_SETTINGS | null;
 
     activeView: View;
     pendingReportFilter: string;
@@ -44,6 +47,9 @@ interface CompassState {
     setRemarks: Dispatch<SetStateAction<ADVISING_REMARK[]>>;
     setStandings: Dispatch<SetStateAction<TERM_STANDING[]>>;
     setTerms: Dispatch<SetStateAction<ACADEMIC_TERM[]>>;
+    setCoursePrerequisites: Dispatch<SetStateAction<COURSE_PREREQUISITE[]>>;
+    setRetentionPolicies: Dispatch<SetStateAction<RETENTION_POLICY[]>>;
+    setSystemSettings: Dispatch<SetStateAction<SYSTEM_SETTINGS | null>>; // ADDED THIS
     setActiveTerm: Dispatch<SetStateAction<string>>;
     setActiveView: Dispatch<SetStateAction<View>>;
     setPendingReportFilter: Dispatch<SetStateAction<string>>;
@@ -60,8 +66,17 @@ const CompassContext = createContext<CompassState | undefined>(undefined);
 
 export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
-    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-    const [activeUser, setActiveUser] = useState<COMPASS_USER | null>(null);
+
+    // REVISION: Initialize state directly from the browser's persistent local storage
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+        return localStorage.getItem('compass_auth') === 'true';
+    });
+
+    const [activeUser, setActiveUser] = useState<COMPASS_USER | null>(() => {
+        const stored = localStorage.getItem('compass_user');
+        return stored ? JSON.parse(stored) : null;
+    });
+
     const [activeTerm, setActiveTerm] = useState<string>("");
 
     const [students, setStudents] = useState<EnrichedStudent[]>([]);
@@ -74,6 +89,8 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [terms, setTerms] = useState<ACADEMIC_TERM[]>([]);
     const [coursePrerequisites, setCoursePrerequisites] = useState<COURSE_PREREQUISITE[]>([]);
     const [auditLogs, setAuditLogs] = useState<AUDIT_LOG[]>([]);
+    const [retentionPolicies, setRetentionPolicies] = useState<RETENTION_POLICY[]>([]);
+    const [systemSettings, setSystemSettings] = useState<SYSTEM_SETTINGS | null>(null);
 
     const [activeView, setActiveView] = useState<View>("dashboard");
     const [pendingReportFilter, setPendingReportFilter] = useState<string>("All Students");
@@ -82,6 +99,16 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
     const [pendingSettingsTab, setPendingSettingsTab] = useState<"profile" | "system" | "audit" | null>(null);
     const [highlightReviewTable, setHighlightReviewTable] = useState<boolean>(false);
+
+    // REVISION: Synchronize session state to local storage whenever it changes
+    useEffect(() => {
+        localStorage.setItem('compass_auth', isAuthenticated.toString());
+        if (activeUser) {
+            localStorage.setItem('compass_user', JSON.stringify(activeUser));
+        } else {
+            localStorage.removeItem('compass_user');
+        }
+    }, [isAuthenticated, activeUser]);
 
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
@@ -100,6 +127,9 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                 setTerms(data.terms);
                 setCoursePrerequisites(data.coursePrerequisites);
                 setAuditLogs(data.auditLogs || []);
+                // FIXED: Populated the retention policies state from the database payload to prevent the Settings WSOD
+                setRetentionPolicies(data.retentionPolicies || []);
+                setSystemSettings(data.systemSettings); // ADDED THIS
 
                 const currentTerm = data.terms.find(t => t.isCurrent);
                 if (currentTerm) setActiveTerm(currentTerm.termID);
@@ -123,7 +153,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     const pushAudit = (action: string, target: string) => {
         if (!activeUser) return;
-        // FIXED: Generates an exact 10-character ID to satisfy varchar(10) database limits
         const logID = `LG-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
         const newLog: AUDIT_LOG = { logID, timestamp: new Date().toISOString(), userID: activeUser.userID, action, target };
         setAuditLogs(prev => [newLog, ...prev]);
@@ -153,9 +182,9 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             isInitializing, isAuthenticated, activeUser, activeTerm, auditLogs, students,
             programs, courses, programCourses, records, remarks, standings, terms, coursePrerequisites,
             activeView, pendingReportFilter, focusedStudentID, pendingEvaluatorAction,
-            isDarkMode, pendingSettingsTab, highlightReviewTable,
-            setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
-            setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setActiveTerm,
+            isDarkMode, pendingSettingsTab, highlightReviewTable,retentionPolicies, systemSettings,
+            setRetentionPolicies, setSystemSettings, setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
+            setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setCoursePrerequisites, setActiveTerm,
             setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction,
             setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, pushAudit, can
         }}>

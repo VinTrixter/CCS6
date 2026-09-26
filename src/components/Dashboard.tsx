@@ -1,13 +1,13 @@
 // src/components/Dashboard.tsx
 import { useEffect, useState } from "react";
 import { useStore } from "../store/store";
+import { backendAPI } from "../backend/api";
 import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
 
 export default function Dashboard() {
-    const { activeTerm, students, standings, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, can } = useStore();
+    const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can } = useStore();
     const [showShiftingModal, setShowShiftingModal] = useState(false);
-    const [reviewedRecords, setReviewedRecords] = useState<string[]>([]);
 
     useEffect(() => {
         if (highlightReviewTable) {
@@ -21,7 +21,8 @@ export default function Dashboard() {
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
     const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
 
-    const manualReviewList = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation' || ts.termAcademicStatus === 'Advised to Shift');
+    // FIXED: Implemented centralized filtering logic to permanently sync with Shell.tsx
+    const manualReviewList = backendAPI.getManualReviewList(currentTermStandings, remarks, activeTerm, activeUser, records, terms);
 
     const navigateToReport = (filter: string) => {
         setPendingReportFilter(filter);
@@ -32,10 +33,6 @@ export default function Dashboard() {
         if (isNew) setPendingEvaluatorAction("new");
         else if (studentID) setFocusedStudentID(studentID);
         setActiveView("evaluator");
-    };
-
-    const toggleReview = (standingID: string) => {
-        setReviewedRecords(prev => prev.includes(standingID) ? prev.filter(id => id !== standingID) : [...prev, standingID]);
     };
 
     return (
@@ -78,8 +75,8 @@ export default function Dashboard() {
             <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
                 <div className={`flex-1 flex flex-col overflow-hidden rounded-xl border transition-all duration-500 ${highlightReviewTable ? 'border-blue-500 ring-4 ring-blue-500/50 shadow-blue-500/20 shadow-lg scale-[1.01]' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm'}`}>
                     <div className={`border-b border-slate-100 dark:border-slate-700 px-5 py-3 transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50 dark:bg-blue-900/40' : 'bg-slate-50 dark:bg-slate-900/50'}`}>
-                        <h2 className="font-bold text-slate-800 dark:text-slate-100">Pending Manual Reviews</h2>
-                        <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Students actively flagged in the current semester requiring administrative review.</p>
+                        <h2 className="font-bold text-slate-800 dark:text-slate-100">Pending Automated Reviews</h2>
+                        <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Records dynamically flag and clear as system dependencies are met.</p>
                     </div>
                     <div className={`overflow-x-auto transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50/30 dark:bg-blue-900/20' : 'bg-white dark:bg-slate-800'}`}>
                         <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
@@ -88,35 +85,30 @@ export default function Dashboard() {
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
                                 <th className="px-5 py-4 font-semibold">Semestral QPA</th>
                                 <th className="px-5 py-4 font-semibold">Current Standing</th>
-                                <th className="px-5 py-4 text-center font-semibold">Addressed</th>
                                 <th className="px-5 py-4 text-right font-semibold">Action</th>
                             </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                             {manualReviewList.map(ts => {
-                                const isAddressed = reviewedRecords.includes(ts.standingID);
                                 return (
-                                    <tr key={ts.standingID} className={`transition hover:bg-slate-50 dark:hover:bg-slate-700/50 ${isAddressed ? 'opacity-40 grayscale' : ''}`}>
+                                    <tr key={ts.standingID} className="transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                         <td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.studentID}</td>
-                                        <td className="px-5 py-4 font-mono">{ts.semCQPA.toFixed(3)}</td>
+                                        <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(3)}</td>
                                         <td className="px-5 py-4">
                                             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300'}`}>
                                               {ts.termAcademicStatus}
                                             </span>
                                         </td>
-                                        <td className="px-5 py-4 text-center">
-                                            <input type="checkbox" checked={isAddressed} onChange={() => toggleReview(ts.standingID)} className="h-4 w-4 cursor-pointer accent-blue-700" title="Mark as addressed" />
-                                        </td>
                                         <td className="px-5 py-4 text-right">
                                             <button onClick={() => navigateToEvaluator(ts.studentID)} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400 disabled:opacity-50">
-                                                Review Profile
+                                                Resolve Profile
                                             </button>
                                         </td>
                                     </tr>
                                 );
                             })}
                             {manualReviewList.length === 0 && (
-                                <tr><td colSpan={5} className="p-8 text-center text-slate-400 dark:text-slate-500">All clear. No manual reviews pending.</td></tr>
+                                <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">All clear. System detected no active compliance violations.</td></tr>
                             )}
                             </tbody>
                         </table>

@@ -14,9 +14,10 @@ export interface STUDENT {
     studFirstName: string;
     studMiddleName?: string;
     studLastName: string;
-    shsTrack: "STEM" | "HUMSS" | "ABM" | "GAS" | "TVL";
-    yearLevel: 1 | 2 | 3 | 4;
+    shsTrack: string;
+    yearLevel: number;
     accountStatus: "Active" | "Inactive" | "Graduated";
+    yearEnrolled: number; // ADDED THIS LINE
 }
 
 export interface STUDENT_PROGRAM {
@@ -97,4 +98,18 @@ export interface AUDIT_LOG {
     userID: string;
     action: string;
     target: string;
+}
+
+export interface RETENTION_POLICY {
+    policyID: string;
+    programCode: string;
+    effectiveYear: number;
+    majorPassingGrade: number;
+    minorPassingGrade: number;
+}
+
+export interface SYSTEM_SETTINGS {
+    id: string;
+    probationThreshold: number;
+    atsThreshold: number;
 }
