@@ -15,10 +15,9 @@ const navItems: { id: View; label: string; icon: React.ElementType }[] = [
 export function Header() {
     const [bellOpen, setBellOpen] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
-
     const { activeUser, activeTerm, setIsAuthenticated, pushAudit, standings, remarks, setActiveView, setPendingSettingsTab, setHighlightReviewTable, terms } = useStore();
-    const termDetails = terms.find(t => t.termID === activeTerm);
 
+    const termDetails = terms.find(t => t.termID === activeTerm);
     const initials = activeUser ? `${activeUser.userFirstName[0] || ""}${activeUser.userLastName[0] || ""}`.toUpperCase() : "??";
 
     const handleLogout = () => {
@@ -53,14 +52,17 @@ export function Header() {
                 >
                     <I.Menu className="h-6 w-6" />
                 </button>
-
                 <div className="flex items-center gap-2">
                     <img src="/imgSilliman.png" alt="Silliman University" className="h-9 w-9 object-contain drop-shadow-sm" />
                     <img src="/imgCCS.jpg" alt="College of Computer Studies" className="h-9 w-9 rounded-full object-contain drop-shadow-sm" />
                 </div>
                 <div className="leading-tight ml-2">
-                    <div className="font-display text-lg font-bold tracking-tight text-blue-800 dark:text-blue-400">Silliman University College of Computer Studies</div>
-                    <div className="hidden text-[11px] text-slate-500 dark:text-slate-400 sm:block">College On Probation Management, Progression, and Academic Standing System</div>
+                    <div className="font-display text-lg font-bold tracking-tight text-blue-800 dark:text-blue-400">
+                        <span className="block sm:hidden">SU CCS</span>
+                        <span className="hidden sm:block xl:hidden">SU College of Computer Studies</span>
+                        <span className="hidden xl:block">Silliman University College of Computer Studies</span>
+                    </div>
+                    <div className="hidden text-[11px] text-slate-500 dark:text-slate-400 lg:block">College On Probation Management, Progression, and Academic Standing System</div>
                 </div>
             </div>
 
@@ -84,6 +86,7 @@ export function Header() {
                             </span>
                         )}
                     </button>
+
                     {bellOpen && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setBellOpen(false)} />
@@ -117,6 +120,7 @@ export function Header() {
                         <span className="hidden text-sm font-medium text-slate-700 dark:text-slate-200 lg:block">{activeUser?.userFirstName} {activeUser?.userLastName}</span>
                         <I.ChevronDown className="h-4 w-4 text-slate-400" />
                     </button>
+
                     {profileOpen && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
@@ -138,7 +142,6 @@ export function Sidebar() {
 
     // FIXED: Sidebar state management and event listeners for the mobile drawer (Concern 1.1)
     const [isOpen, setIsOpen] = useState(false);
-
     useEffect(() => {
         const handleToggle = () => setIsOpen(prev => !prev);
         window.addEventListener('toggle-sidebar', handleToggle);
@@ -181,6 +184,7 @@ export function Sidebar() {
                             );
                         })}
                     </nav>
+
                     <div className="mx-3 mt-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 p-4 shadow-sm">
                         <div>
                             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Students</div>

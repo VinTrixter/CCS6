@@ -45,7 +45,8 @@ export default function Reports() {
         let isMounted = true;
         const fetchReport = async () => {
             setIsLoading(true);
-            const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings, targetTermDetails);
+            // FIXED: Report generation now receives global standings and terms to support historical ATS cross-referencing (Phase 4)
+            const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings, targetTermDetails, standings, terms);
             if (isMounted) {
                 if (error) alert(error);
                 if (data) setReportData(data as ReportRecord[]);
@@ -53,8 +54,7 @@ export default function Reports() {
             }
         };
         void fetchReport();
-        return () => { isMounted = false; };
-    }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails]);
+    }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails, standings, terms]);
 
     const calcYearLevel = (record: ReportRecord) => {
         if (record.yearLevel) return record.yearLevel;
@@ -114,7 +114,6 @@ export default function Reports() {
 
                         <div className="flex-[1.5] min-w-[140px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Program</label>
-                            {/* FIXED: Applied strict isArchived filter to hide dead curriculums from Report Filter dropdown */}
                             <select value={programFilter} onChange={(e) => setProgramFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Programs</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                         </div>
 

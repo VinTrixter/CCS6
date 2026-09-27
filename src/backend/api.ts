@@ -221,7 +221,6 @@ export const backendAPI = {
         const reviewItems: MANUAL_REVIEW_ITEM[] = [];
 
         safeStandings.forEach(ts => {
-            // FIXED: Dashboard Ghost Flag Purge to ignore Inactive/Graduated students (Phase 2)
             if (students) {
                 const stu = students.find(s => s.studentID === ts.studentID);
                 if (stu && stu.accountStatus !== 'Active') return;
@@ -251,7 +250,6 @@ export const backendAPI = {
                 });
 
                 expiredIncs.forEach(inc => {
-                    // FIXED: Dashboard Ghost Flag Purge for expired INCs (Phase 2)
                     if (students) {
                         const stu = students.find(s => s.studentID === inc.studentID);
                         if (stu && stu.accountStatus !== 'Active') return;
@@ -345,6 +343,41 @@ export const backendAPI = {
                     }
                 }
             });
+        }
+
+        // FIXED: Pending Status Update Scanner (Phase 3)
+        if (students && terms) {
+            const activeTermObj = terms.find(t => t.termID === activeTerm);
+            if (activeTermObj) {
+                students.forEach(student => {
+                    if (student.accountStatus !== 'Active') return;
+
+                    const historicalATS = safeStandings.find(ts => {
+                        if (ts.studentID !== student.studentID) return false;
+                        if (ts.termAcademicStatus !== 'Advised to Shift') return false;
+                        const tsTerm = terms.find(t => t.termID === ts.termID);
+                        return tsTerm && compareTerms(tsTerm, activeTermObj) < 0;
+                    });
+
+                    if (historicalATS) {
+                        const existingIndex = reviewItems.findIndex(r => r.studentID === student.studentID && r.issueDescription === "Pending Status Update (Unresolved ATS)");
+                        if (existingIndex === -1) {
+                            reviewItems.push({
+                                standingID: historicalATS.standingID,
+                                termQPA: historicalATS.termQPA,
+                                semCQPA: historicalATS.semCQPA,
+                                termAcademicStatus: historicalATS.termAcademicStatus,
+                                isConsecutiveOP: historicalATS.isConsecutiveOP,
+                                yearLevel: historicalATS.yearLevel || student.yearLevel,
+                                studentID: student.studentID,
+                                termID: activeTerm,
+                                issueDescription: "Pending Status Update (Unresolved ATS)",
+                                targetTermID: activeTerm
+                            } as MANUAL_REVIEW_ITEM);
+                        }
+                    }
+                });
+            }
         }
 
         return reviewItems;
@@ -621,7 +654,6 @@ export const backendAPI = {
         const existingRecords = records.filter(r => r.studentID === student.studentID && r.termID === activeTerm);
         const newRecords: ACADEMIC_RECORD[] = [];
 
-        // FIXED: Auto-Populate Historical Pass Filter to skip already passed subjects (Phase 2)
         const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
         const studentRecords = records.filter(r => r.studentID === student.studentID);
 
@@ -1141,24 +1173,41 @@ export const backendAPI = {
         };
     },
 
+    // FIXED: generateReport accepts global context parameters for historical ATS scans (Phase 3)
     async generateReport(
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
-        students: EnrichedStudent[], activeStandings: TERM_STANDING[], targetTermDetails?: ACADEMIC_TERM
+        students: EnrichedStudent[], activeStandings: TERM_STANDING[], targetTermDetails?: ACADEMIC_TERM,
+        allStandings: TERM_STANDING[] = [], allTerms: ACADEMIC_TERM[] = []
     ) {
         if (!targetTermDetails) return { data: [], error: "No historical term context selected." };
         const targetYear = parseInt(targetTermDetails.termSY.split('-')[0]);
 
         const data = students.filter(s => s.yearEnrolled <= targetYear).map(student => {
             const ts = activeStandings.find(st => st.studentID === student.studentID);
-
             const chronologicalYearLevel = Math.max(1, targetYear - student.yearEnrolled + 1);
+
+            let effectiveStatus = ts ? ts.termAcademicStatus : "Unencoded";
+
+            // FIXED: Historical ATS Report Override (Phase 3)
+            if (allStandings.length > 0 && allTerms.length > 0) {
+                const hasHistoricalATS = allStandings.some(histTs => {
+                    if (histTs.studentID !== student.studentID) return false;
+                    if (histTs.termAcademicStatus !== 'Advised to Shift') return false;
+                    const histTerm = allTerms.find(t => t.termID === histTs.termID);
+                    if (!histTerm) return false;
+                    return compareTerms(histTerm, targetTermDetails) <= 0;
+                });
+                if (hasHistoricalATS) {
+                    effectiveStatus = "Advised to Shift";
+                }
+            }
 
             if (ts) {
                 return {
                     standingID: ts.standingID,
                     termQPA: ts.termQPA,
                     semCQPA: ts.semCQPA,
-                    termAcademicStatus: ts.termAcademicStatus,
+                    termAcademicStatus: effectiveStatus,
                     isConsecutiveOP: ts.isConsecutiveOP,
                     yearLevel: ts.yearLevel || chronologicalYearLevel,
                     studentID: ts.studentID,
@@ -1170,7 +1219,7 @@ export const backendAPI = {
                     standingID: `SYN-${student.studentID}`,
                     termQPA: 0.0,
                     semCQPA: 0.0,
-                    termAcademicStatus: "Unencoded",
+                    termAcademicStatus: effectiveStatus,
                     isConsecutiveOP: false,
                     yearLevel: chronologicalYearLevel,
                     studentID: student.studentID,

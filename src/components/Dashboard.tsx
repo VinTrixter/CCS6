@@ -6,7 +6,9 @@ import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
 
 export default function Dashboard() {
-    const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can, setPendingLocalTerm } = useStore();
+    // FIXED: Safely added programCourses to the useStore destruction array (Phase 3 dependency)
+    const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can, setPendingLocalTerm, programCourses } = useStore();
+
     const [showShiftingModal, setShowShiftingModal] = useState(false);
 
     useEffect(() => {
@@ -21,8 +23,8 @@ export default function Dashboard() {
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
     const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
 
-    // FIXED: Passed `students` array into the automated review engine to scan for Orphaned/Unassigned records
-    const manualReviewList = backendAPI.getManualReviewList(currentTermStandings, remarks, activeTerm, activeUser, records, terms, students);
+    // FIXED: Passed global standings and programCourses to ensure the historical ATS & pending graduation scanners execute correctly (Phase 3)
+    const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser, records, terms, students, programCourses);
 
     const navigateToReport = (filter: string) => {
         setPendingReportFilter(filter);

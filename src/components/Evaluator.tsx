@@ -9,16 +9,21 @@ import * as I from "./icons";
 type Tab = "grades" | "history" | "progress" | "remarks";
 type AdvisingCategory = "General Note" | "Guidance Referral" | "Policy Warning" | "Shifting Recommended";
 
-const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, onSave: (val: string) => void, disabled: boolean }) => {
+// FIXED: GradeInput accepts async boolean onSave to execute promise-based UI text reversion (Phase 5)
+const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, onSave: (val: string) => Promise<boolean>, disabled: boolean }) => {
     const [val, setVal] = useState(initialValue);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setVal(initialValue);
     }, [initialValue]);
 
-    const handleBlur = () => {
-        if (val !== initialValue) onSave(val);
+    const handleBlur = async () => {
+        if (val !== initialValue) {
+            const success = await onSave(val);
+            if (!success) {
+                setVal(initialValue);
+            }
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -256,17 +261,21 @@ export default function Evaluator() {
         setCourseSearch("");
     };
 
-    const handleGradeChange = async (code: string, val: string, recordID?: string) => {
-        if (!activeUser || !selectedStudent) return;
+    // FIXED: Enforced Promise<boolean> execution to synchronously revert input UI state if backend save fails (Phase 5)
+    const handleGradeChange = async (code: string, val: string, recordID?: string): Promise<boolean> => {
+        if (!activeUser || !selectedStudent) return false;
         const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
-        if (!activeProgram) return;
+        if (!activeProgram) return false;
 
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             code, val, recordID, selectedStudent, localTerm, records,
             programCourses, courses, activeProgram, standings, activeUser.userID, terms, retentionPolicies
         );
 
-        if (error) return alert(error);
+        if (error) {
+            alert(error);
+            return false;
+        }
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
         if (updatedYearLevel !== undefined) {
@@ -275,6 +284,7 @@ export default function Evaluator() {
             setSelectedStudent(updated);
         }
         if (!recordID) pushAudit("ENCODED_NEW_GRADE", selectedStudent.studentID);
+        return true;
     };
 
     const handleDeleteRow = async (code: string, recordID?: string) => {
@@ -319,7 +329,7 @@ export default function Evaluator() {
             return alert("Names cannot be empty or just spaces.");
         }
 
-        const nameRegex = /^[A-Za-z\s\-ñÑ]+$/;
+        const nameRegex = /^[A-Za-z\s\- ]+$/;
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
@@ -352,7 +362,7 @@ export default function Evaluator() {
             return alert("Names cannot be empty or just spaces.");
         }
 
-        const nameRegex = /^[A-Za-z\s\-ñÑ]+$/;
+        const nameRegex = /^[A-Za-z\s\- ]+$/;
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
@@ -447,7 +457,6 @@ export default function Evaluator() {
                             <input placeholder="Middle Name (Optional)" value={formData.middleName} onChange={e => setFormData({...formData, middleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input required placeholder="Last Name" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <div className="grid grid-cols-2 gap-3">
-                                {/* FIXED: Applied strict isArchived filter to Ghost Program dropdown mappings */}
                                 <select required value={formData.programCode} onChange={e => setFormData({...formData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Program...</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                 <select required value={formData.yearLevel} onChange={e => setFormData({...formData, yearLevel: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Year Lvl...</option>{[1,2,3,4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                 <select required value={formData.shsTrack} onChange={e => setFormData({...formData, shsTrack: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>SHS Track...</option><option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option></select>
@@ -516,7 +525,6 @@ export default function Evaluator() {
                                                 <input type="text" placeholder="Middle Name" value={editFormData.studMiddleName || ""} onChange={e => setEditFormData({...editFormData, studMiddleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                                                 <input type="text" placeholder="Last Name" value={editFormData.studLastName} onChange={e => setEditFormData({...editFormData, studLastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                                    {/* FIXED: Applied strict isArchived filter to Ghost Program dropdown mappings */}
                                                     <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                                     <select value={editFormData.yearLevel} onChange={e => setEditFormData({...editFormData, yearLevel: Number(e.target.value) as EnrichedStudent["yearLevel"]})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                                     <select value={editFormData.shsTrack} onChange={e => setEditFormData({...editFormData, shsTrack: e.target.value as EnrichedStudent["shsTrack"]})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">
