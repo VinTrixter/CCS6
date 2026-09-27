@@ -34,7 +34,7 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="-"
-            className="w-20 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none transition focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60"
+            className="w-20 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none transition focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
         />
     );
 };
@@ -88,8 +88,30 @@ export default function Evaluator() {
     const [localTerm, setLocalTerm] = useState<string>(activeTerm);
 
     const searchResults = students.filter(s => {
-        const compositeString = `${s.studFirstName} ${s.studLastName} ${s.studLastName}, ${s.studFirstName} ${s.studentID}`.toLowerCase();
-        return compositeString.includes(searchQuery.toLowerCase().trim());
+        const q = searchQuery.toLowerCase().trim();
+        const qNoHyphens = q.replace(/-/g, '');
+
+        const f = s.studFirstName.toLowerCase();
+        const l = s.studLastName.toLowerCase();
+        const m = s.studMiddleName ? s.studMiddleName.toLowerCase() : "";
+        const mi = m ? m.charAt(0) : "";
+        const id = s.studentID.toLowerCase();
+        const idFlat = id.replace(/-/g, '');
+
+        const compositeString = `
+            ${f} ${l} 
+            ${l}, ${f} 
+            ${l} ${f} 
+            ${f} ${m} ${l} 
+            ${l} ${f} ${m} 
+            ${f} ${mi} ${l} 
+            ${f} ${mi}. ${l} 
+            ${l} ${f} ${mi} 
+            ${l} ${f} ${mi}. 
+            ${id}
+        `.toLowerCase();
+
+        return compositeString.includes(q) || (qNoHyphens.length > 0 && idFlat.includes(qNoHyphens));
     });
 
     const termStanding = standings.find(ts => ts.studentID === selectedStudent?.studentID && ts.termID === localTerm);
@@ -104,8 +126,14 @@ export default function Evaluator() {
     const localTermDetails = terms.find(t => t.termID === localTerm);
     const activeTermObj = terms.find(t => t.termID === activeTerm);
 
-    // FIXED: Ensure demographic header accurately warps to the snapshotted year level of the selected historical term
-    const displayYearLevel = termStanding?.yearLevel || Math.max(1, parseInt(localTermDetails?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+    const dynamicMaxYear = selectedStudent ? (() => {
+        const progYearLevels = programCourses.filter(pc => pc.programCode === selectedStudent.programCode).map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
+        return progYearLevels.length > 0 ? Math.max(...progYearLevels) : 4;
+    })() : 4;
+    const chronologicalYear = Math.max(1, parseInt(localTermDetails?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+    const displayYearLevel = termStanding?.yearLevel || Math.min(dynamicMaxYear, chronologicalYear);
+
+    const isReadOnly = selectedStudent ? selectedStudent.accountStatus !== 'Active' : false;
 
     const availableTerms = terms.filter(t => {
         if (!activeTermObj) return false;
@@ -184,7 +212,7 @@ export default function Evaluator() {
         setIsLoading(true);
 
         const { data: newRecords, newStanding, updatedStudentYearLevel, error } = await backendAPI.generateAutoPopulateRecords(
-            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings
+            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies
         );
 
         if (error) {
@@ -279,8 +307,13 @@ export default function Evaluator() {
             return alert("Invalid Student ID format. It must contain at least 7 digits (e.g., XX-X-XXXX).");
         }
 
+        if (students.some(s => s.studentID === formData.studentID)) {
+            return alert("A student with this ID already exists in the system.");
+        }
+
         const firstName = formData.firstName.trim();
         const lastName = formData.lastName.trim();
+        const middleName = formData.middleName.trim();
 
         if (!firstName || !lastName) {
             return alert("Names cannot be empty or just spaces.");
@@ -290,9 +323,12 @@ export default function Evaluator() {
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
+        if (middleName && !nameRegex.test(middleName)) {
+            return alert("Middle name must only contain letters, spaces, and hyphens.");
+        }
 
         const newStudent: EnrichedStudent = {
-            studentID: formData.studentID, studFirstName: firstName, studMiddleName: formData.middleName.trim(), studLastName: lastName,
+            studentID: formData.studentID, studFirstName: firstName, studMiddleName: middleName, studLastName: lastName,
             shsTrack: formData.shsTrack as EnrichedStudent["shsTrack"], yearLevel: Number(formData.yearLevel) as EnrichedStudent["yearLevel"], accountStatus: "Active", programCode: formData.programCode,
             yearEnrolled: Number(formData.yearEnrolled)
         };
@@ -310,6 +346,7 @@ export default function Evaluator() {
 
         const firstName = editFormData.studFirstName.trim();
         const lastName = editFormData.studLastName.trim();
+        const middleName = editFormData.studMiddleName?.trim() || "";
 
         if (!firstName || !lastName) {
             return alert("Names cannot be empty or just spaces.");
@@ -319,12 +356,15 @@ export default function Evaluator() {
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
+        if (middleName && !nameRegex.test(middleName)) {
+            return alert("Middle name must only contain letters, spaces, and hyphens.");
+        }
 
         const updatedStudent: EnrichedStudent = {
             ...editFormData,
             studFirstName: firstName,
             studLastName: lastName,
-            studMiddleName: editFormData.studMiddleName?.trim() || ""
+            studMiddleName: middleName
         };
 
         const { data, error } = await backendAPI.updateStudent(updatedStudent, students, activeTerm);
@@ -378,7 +418,6 @@ export default function Evaluator() {
         !(progFilterSem !== "All" && pc.termSem !== progFilterSem)
     );
 
-    // FIXED: Strict Academic History Grouping eradicates the global profile contamination
     const groupedHistory = historyStandings.reduce((acc, ts) => {
         const term = terms.find(t => t.termID === ts.termID);
         const yLvl = ts.yearLevel || Math.max(1, parseInt(term?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
@@ -408,7 +447,8 @@ export default function Evaluator() {
                             <input placeholder="Middle Name (Optional)" value={formData.middleName} onChange={e => setFormData({...formData, middleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input required placeholder="Last Name" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <div className="grid grid-cols-2 gap-3">
-                                <select required value={formData.programCode} onChange={e => setFormData({...formData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Program...</option>{programs.map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                {/* FIXED: Applied strict isArchived filter to Ghost Program dropdown mappings */}
+                                <select required value={formData.programCode} onChange={e => setFormData({...formData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Program...</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                 <select required value={formData.yearLevel} onChange={e => setFormData({...formData, yearLevel: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Year Lvl...</option>{[1,2,3,4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                 <select required value={formData.shsTrack} onChange={e => setFormData({...formData, shsTrack: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>SHS Track...</option><option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option></select>
                                 <input required type="number" placeholder="Year Enrolled" value={formData.yearEnrolled} onChange={e => setFormData({...formData, yearEnrolled: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
@@ -476,7 +516,8 @@ export default function Evaluator() {
                                                 <input type="text" placeholder="Middle Name" value={editFormData.studMiddleName || ""} onChange={e => setEditFormData({...editFormData, studMiddleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                                                 <input type="text" placeholder="Last Name" value={editFormData.studLastName} onChange={e => setEditFormData({...editFormData, studLastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{programs.map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                                    {/* FIXED: Applied strict isArchived filter to Ghost Program dropdown mappings */}
+                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                                     <select value={editFormData.yearLevel} onChange={e => setEditFormData({...editFormData, yearLevel: Number(e.target.value) as EnrichedStudent["yearLevel"]})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                                     <select value={editFormData.shsTrack} onChange={e => setEditFormData({...editFormData, shsTrack: e.target.value as EnrichedStudent["shsTrack"]})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">
                                                         <option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option>
@@ -494,11 +535,17 @@ export default function Evaluator() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="mt-5 grid grid-cols-3 gap-3 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 text-sm transition-colors">
-                                                <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">QPA</div><div className="font-mono text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.termQPA?.toFixed(2) || "0.00"}</div></div>
-                                                <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">CQPA</div><div className="font-mono text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.semCQPA?.toFixed(2) || "0.00"}</div></div>
-                                                <div>
-                                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Account</div>
+                                            <div className="mt-5 flex flex-wrap lg:grid lg:grid-cols-12 gap-y-4 gap-x-4 lg:gap-x-6 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 transition-colors">
+                                                <div className="flex-1 min-w-fit lg:col-span-4">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">QPA</div>
+                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.termQPA?.toFixed(2) || "0.00"}</div>
+                                                </div>
+                                                <div className="flex-1 min-w-fit lg:col-span-4">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">CQPA</div>
+                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800 dark:text-slate-100">{termStanding?.semCQPA?.toFixed(2) || "0.00"}</div>
+                                                </div>
+                                                <div className="flex-1 min-w-[100px] lg:col-span-4">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Account</div>
                                                     <select
                                                         disabled={!can('archive_student')}
                                                         value={selectedStudent.accountStatus}
@@ -510,18 +557,31 @@ export default function Evaluator() {
                                                             setSelectedStudent(updated);
                                                             pushAudit(`STATUS_CHANGED_TO_${updated.accountStatus.toUpperCase()}`, updated.studentID);
                                                         }}
-                                                        className="mt-1 w-full rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-1 text-xs font-semibold outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60 transition-colors"
+                                                        className="mt-0.5 w-full lg:w-auto rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] lg:text-xs font-semibold outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-60 transition-colors"
                                                     >
                                                         <option value="Active">Active</option>
                                                         <option value="Inactive">Inactive</option>
                                                         <option value="Graduated">Graduated</option>
                                                     </select>
                                                 </div>
-                                                <div className="col-span-3 mt-2 grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-4">
-                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Program</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedStudent.programCode}</div></div>
-                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Year Lvl</div><div className="font-medium text-slate-700 dark:text-slate-300">Year {displayYearLevel}</div></div>
-                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Enrolled</div><div className="font-medium text-slate-700 dark:text-slate-300">AY {selectedStudent.yearEnrolled}</div></div>
-                                                    <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Term Profile</div><div className="font-medium text-slate-700 dark:text-slate-300">{localTermDetails?.termSem}</div></div>
+
+                                                <div className="hidden lg:block lg:col-span-12 h-px w-full bg-slate-200 dark:bg-slate-700"></div>
+
+                                                <div className="flex-1 min-w-fit lg:col-span-3">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Program</div>
+                                                    <div className="whitespace-nowrap text-[11px] lg:text-sm font-medium text-slate-700 dark:text-slate-300">{selectedStudent.programCode}</div>
+                                                </div>
+                                                <div className="flex-1 min-w-fit lg:col-span-3">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Year Lvl</div>
+                                                    <div className="whitespace-nowrap text-[11px] lg:text-sm font-medium text-slate-700 dark:text-slate-300">Year {displayYearLevel}</div>
+                                                </div>
+                                                <div className="flex-1 min-w-fit lg:col-span-3">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Enrolled</div>
+                                                    <div className="whitespace-nowrap text-[11px] lg:text-sm font-medium text-slate-700 dark:text-slate-300">AY {selectedStudent.yearEnrolled}</div>
+                                                </div>
+                                                <div className="flex-1 min-w-fit lg:col-span-3">
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Term Profile</div>
+                                                    <div className="whitespace-nowrap text-[11px] lg:text-sm font-medium text-slate-700 dark:text-slate-300">{localTermDetails?.termSem}</div>
                                                 </div>
                                             </div>
                                         )}
@@ -564,11 +624,11 @@ export default function Evaluator() {
                                         </div>
                                         {can('encode_grades') && (
                                             <div className="flex gap-2">
-                                                <button onClick={handleAutoPopulate} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400">
+                                                <button onClick={handleAutoPopulate} disabled={isReadOnly} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed">
                                                     Auto-Populate Term
                                                 </button>
                                                 <div className="relative">
-                                                    <button onClick={() => { setShowExtraCourseDropdown(!showExtraCourseDropdown); setCourseSearch(""); }} className="rounded-md bg-blue-700 dark:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700">
+                                                    <button onClick={() => { setShowExtraCourseDropdown(!showExtraCourseDropdown); setCourseSearch(""); }} disabled={isReadOnly} className="rounded-md bg-blue-700 dark:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
                                                         + Add Subject
                                                     </button>
                                                     {showExtraCourseDropdown && (
@@ -625,12 +685,12 @@ export default function Evaluator() {
                                                     <td className="px-5 py-4">
                                                         <GradeInput
                                                             initialValue={row.finalGrade}
-                                                            disabled={!can('encode_grades')}
+                                                            disabled={!can('encode_grades') || isReadOnly}
                                                             onSave={(val) => handleGradeChange(row.courseCode, val, row.recordID)}
                                                         />
                                                     </td>
                                                     <td className="px-5 py-4 text-right whitespace-nowrap w-24 sticky right-0 bg-white dark:bg-slate-800 shadow-[-5px_0_15px_-3px_rgba(0,0,0,0.05)] dark:shadow-black/20">
-                                                        {can('encode_grades') && row.recordID && row.isBlank && (<button onClick={() => handleDeleteRow(row.courseCode, row.recordID!)} className="rounded p-1 text-slate-400 dark:text-slate-500 transition hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-coral dark:hover:text-red-400"><I.X className="h-4 w-4" /></button>)}
+                                                        {can('encode_grades') && row.recordID && row.isBlank && !isReadOnly && (<button onClick={() => handleDeleteRow(row.courseCode, row.recordID!)} className="rounded p-1 text-slate-400 dark:text-slate-500 transition hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-coral dark:hover:text-red-400"><I.X className="h-4 w-4" /></button>)}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -758,16 +818,16 @@ export default function Evaluator() {
                                     {can('add_remarks') && (
                                         <form onSubmit={handleSaveRemark} className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm transition-colors">
                                             {!editingRemarkID && (
-                                                <select value={remarkForm.category} onChange={e => setRemarkForm({...remarkForm, category: e.target.value as AdvisingCategory})} className="mb-3 w-1/3 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500">
+                                                <select disabled={isReadOnly} value={remarkForm.category} onChange={e => setRemarkForm({...remarkForm, category: e.target.value as AdvisingCategory})} className="mb-3 w-1/3 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">
                                                     <option>General Note</option>
                                                     <option>Guidance Referral</option>
                                                     <option>Policy Warning</option>
                                                     <option>Shifting Recommended</option>
                                                 </select>
                                             )}
-                                            <textarea required value={remarkForm.content} onChange={e => setRemarkForm({...remarkForm, content: e.target.value})} placeholder="Enter advising remark here..." className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-3 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500" rows={3}></textarea>
+                                            <textarea disabled={isReadOnly} required value={remarkForm.content} onChange={e => setRemarkForm({...remarkForm, content: e.target.value})} placeholder="Enter advising remark here..." className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-3 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed" rows={3}></textarea>
                                             <div className="mt-3 flex items-center gap-3">
-                                                <button type="submit" className="rounded-lg bg-blue-700 dark:bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800 dark:hover:bg-blue-700 transition">{editingRemarkID ? "Update Remark" : "Save Remark"}</button>
+                                                <button disabled={isReadOnly} type="submit" className="rounded-lg bg-blue-700 dark:bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800 dark:hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">{editingRemarkID ? "Update Remark" : "Save Remark"}</button>
                                                 {editingRemarkID && <button type="button" onClick={() => { setEditingRemarkID(null); setRemarkForm({ category: "General Note", content: "" }); }} className="text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition">Cancel</button>}
                                             </div>
                                         </form>

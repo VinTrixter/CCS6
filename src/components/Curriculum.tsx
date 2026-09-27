@@ -28,7 +28,7 @@ export default function Curriculum() {
 
     const [showProgramForm, setShowProgramForm] = useState(false);
     const [editingProgCode, setEditingProgCode] = useState<string | null>(null);
-    const [progForm, setProgForm] = useState({ code: "", title: "", year: "", threshold: "" });
+    const [progForm, setProgForm] = useState({ code: "", title: "", year: "" });
 
     const [showCourseForm, setShowCourseForm] = useState(false);
     const [editingCourseCode, setEditingCourseCode] = useState<string | null>(null);
@@ -44,6 +44,8 @@ export default function Curriculum() {
     });
 
     const filteredPrograms = programs.filter(p => {
+        if ((p as any).isArchived) return false;
+
         const matchesProg = p.programCode.toLowerCase().includes(searchQuery.toLowerCase()) || p.programTitle.toLowerCase().includes(searchQuery.toLowerCase());
         const progCourses = programCourses.filter(pc => pc.programCode === p.programCode);
         const matchesCourse = progCourses.some(pc => {
@@ -65,10 +67,10 @@ export default function Curriculum() {
 
     const openProgramForm = (prog?: DEGREE_PROGRAM) => {
         if (prog) {
-            setProgForm({ code: prog.programCode, title: prog.programTitle, year: prog.curriculumYear, threshold: prog.passingGradeThreshold?.toString() || "1.0" });
+            setProgForm({ code: prog.programCode, title: prog.programTitle, year: prog.curriculumYear });
             setEditingProgCode(prog.programCode);
         } else {
-            setProgForm({ code: "", title: "", year: "", threshold: "" });
+            setProgForm({ code: "", title: "", year: "" });
             setEditingProgCode(null);
         }
         setShowProgramForm(true);
@@ -102,6 +104,7 @@ export default function Curriculum() {
             return alert("Invalid School Year format. Please use YYYY-YYYY (e.g., 2024-2025).");
         }
 
+<<<<<<< HEAD
         const trimmedCode = progForm.code.trim();
         const trimmedTitle = progForm.title.trim();
 
@@ -109,6 +112,20 @@ export default function Curriculum() {
             return alert("Program code and title are required.");
         }
 
+=======
+        const [startYear, endYear] = progForm.year.split('-').map(Number);
+        if (endYear - startYear !== 1) {
+            return alert("Invalid School Year. The end year must be exactly one year after the start year (e.g., 2024-2025).");
+        }
+
+        const trimmedCode = progForm.code.trim();
+        const trimmedTitle = progForm.title.trim();
+
+        if (!trimmedCode || !trimmedTitle) {
+            return alert("Program code and title are required.");
+        }
+
+>>>>>>> d9c8794bddfeb19bd3f08ed8f2e03c15ebcd93a1
         const newProg: DEGREE_PROGRAM = {
             programCode: trimmedCode.toUpperCase(),
             programTitle: trimmedTitle,
@@ -153,7 +170,6 @@ export default function Curriculum() {
             return alert("Please select a valid semester and classification.");
         }
 
-        // FIXED: Adjusted numerical guard to safely block negative units while accepting 0-units for non-credited subjects (e.g., PEP)
         const unitsNum = Number(courseForm.units);
         if (isNaN(unitsNum) || unitsNum < 0) {
             return alert("Course units cannot be negative. Use 0 for non-credited subjects (e.g., PEP).");
@@ -228,10 +244,7 @@ export default function Curriculum() {
                             <h3 className="font-bold text-slate-800 dark:text-slate-100">{editingProgCode ? "Edit Curriculum" : "New Curriculum"}</h3>
                             <input required placeholder="Program Code (e.g. BSCS)" value={progForm.code} onChange={e => setProgForm({...progForm, code: e.target.value.toUpperCase()})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input required placeholder="Descriptive Title" value={progForm.title} onChange={e => setProgForm({...progForm, title: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
-                            <div className="flex gap-2">
-                                <input required placeholder="Curriculum Year (e.g., 2018-2019)" value={progForm.year} onChange={e => setProgForm({...progForm, year: e.target.value})} className="w-1/2 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
-                                <input required type="number" step="0.5" placeholder="Pass Threshold" value={progForm.threshold} onChange={e => setProgForm({...progForm, threshold: e.target.value})} className="w-1/2 rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
-                            </div>
+                            <input required placeholder="Curriculum Year (e.g., 2024-2025)" value={progForm.year} onChange={e => setProgForm({...progForm, year: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <div className="mt-2 flex gap-2">
                                 {editingProgCode && (
                                     <button type="button" onClick={handleDeleteProgram} className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/30 px-4 py-2 text-sm font-semibold text-red-600 dark:text-red-400 transition hover:bg-red-100 dark:hover:bg-red-900/50"><I.X className="h-4 w-4" /></button>
@@ -247,9 +260,14 @@ export default function Curriculum() {
                     </div>
                 </div>
 
-                <div className="flex flex-col gap-2 pb-4 flex-1 overflow-y-auto pr-1">
+                {/* FIXED: Applied conditional hidden lg:flex visibility to securely hide the catalog when viewing a curriculum on mobile */}
+                <div className={`flex-col gap-2 pb-4 flex-1 overflow-y-auto pr-1 ${selectedProgram && !searchQuery ? 'hidden lg:flex' : 'flex'}`}>
                     {filteredPrograms.map(program => (
-                        <button key={program.programCode} onClick={() => { setSelectedProgram(program); setShowCourseForm(false); }} className={`group shrink-0 flex w-full flex-col items-start rounded-xl border p-4 text-left shadow-sm transition ${selectedProgram?.programCode === program.programCode ? "border-blue-700 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"}`}>
+                        <button
+                            key={program.programCode}
+                            onClick={() => { setSelectedProgram(program); setShowCourseForm(false); setSearchQuery(""); }}
+                            className={`group shrink-0 flex w-full flex-col items-start rounded-xl border p-4 text-left shadow-sm transition ${selectedProgram?.programCode === program.programCode ? "border-blue-700 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"}`}
+                        >
                             <div className="flex w-full items-start justify-between">
                                 <div className="flex items-center gap-2">
                                     <div className="font-bold text-slate-800 dark:text-slate-200">{program.programCode}</div>
@@ -264,11 +282,16 @@ export default function Curriculum() {
                 </div>
             </div>
 
-            <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
+            {/* FIXED: Applied conditional hidden lg:flex visibility to securely hide the details panel when typing a search query or returning to catalog on mobile */}
+            <div className={`flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors ${!selectedProgram || searchQuery ? 'hidden lg:flex' : 'flex'}`}>
                 {selectedProgram ? (
                     <>
                         <div className="flex flex-col shrink-0">
                             <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5">
+                                {/* FIXED: Mobile Dismiss Button for Curriculum Details */}
+                                <button onClick={() => setSelectedProgram(null)} className="mb-3 flex items-center text-xs font-bold text-slate-500 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-400 lg:hidden transition-colors">
+                                    &larr; Back to Catalog
+                                </button>
                                 <div className="flex items-center justify-between">
                                     <div><h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{selectedProgram.programTitle}</h2><div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Effective Year: <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedProgram.curriculumYear}</span></div></div>
                                     {can('manage_curriculum') ? (<button onClick={() => openCourseForm()} className="flex items-center gap-2 rounded-lg bg-slate-800 dark:bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700 dark:hover:bg-blue-500 transition">+ Add Subject</button>) : (<div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-500"><I.Warning className="h-4 w-4" />Read-Only Mode</div>)}

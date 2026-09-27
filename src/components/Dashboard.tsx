@@ -6,7 +6,6 @@ import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
 
 export default function Dashboard() {
-    // FIXED: Extracted setPendingLocalTerm to enable Term Warping navigation
     const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can, setPendingLocalTerm } = useStore();
     const [showShiftingModal, setShowShiftingModal] = useState(false);
 
@@ -22,14 +21,14 @@ export default function Dashboard() {
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
     const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
 
-    const manualReviewList = backendAPI.getManualReviewList(currentTermStandings, remarks, activeTerm, activeUser, records, terms);
+    // FIXED: Passed `students` array into the automated review engine to scan for Orphaned/Unassigned records
+    const manualReviewList = backendAPI.getManualReviewList(currentTermStandings, remarks, activeTerm, activeUser, records, terms, students);
 
     const navigateToReport = (filter: string) => {
         setPendingReportFilter(filter);
         setActiveView("reports");
     };
 
-    // FIXED: Updated navigation function to receive targetTermID and execute Term Warping
     const navigateToEvaluator = (studentID?: string, targetTermID?: string, isNew: boolean = false) => {
         if (isNew) setPendingEvaluatorAction("new");
         else if (studentID) {
@@ -89,7 +88,6 @@ export default function Dashboard() {
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
                                 <th className="px-5 py-4 font-semibold">Semestral QPA</th>
                                 <th className="px-5 py-4 font-semibold">Current Standing</th>
-                                {/* FIXED: Added column to display the specific issue context */}
                                 <th className="px-5 py-4 font-semibold">Issue / Concern</th>
                                 <th className="px-5 py-4 text-right font-semibold">Action</th>
                             </tr>
@@ -105,7 +103,6 @@ export default function Dashboard() {
                                               {ts.termAcademicStatus}
                                             </span>
                                         </td>
-                                        {/* FIXED: Rendering metadata string directly from API */}
                                         <td className="px-5 py-4 text-xs font-semibold text-coral dark:text-red-400">{ts.issueDescription}</td>
                                         <td className="px-5 py-4 text-right">
                                             <button onClick={() => navigateToEvaluator(ts.studentID, ts.targetTermID)} className="rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-blue-700 hover:text-blue-700 dark:hover:border-blue-400 dark:hover:text-blue-400 disabled:opacity-50">

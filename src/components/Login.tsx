@@ -22,11 +22,18 @@ export default function Login() {
 
         const cleanInput = loginInput.trim();
 
-        // 1. Fetch user by checking BOTH userID and userName columns
+        // 1. Fetch user by checking strictly the userName column
+        /* PREVIOUS LOGIC: Supported both userID and userName
         const { data: userData, error: userError } = await supabase
             .from('COMPASS_USER')
             .select('*')
             .or(`userID.eq.${cleanInput},userName.eq.${cleanInput}`)
+            .single();
+        */
+        const { data: userData, error: userError } = await supabase
+            .from('COMPASS_USER')
+            .select('*')
+            .eq('userName', cleanInput)
             .single();
 
         if (userError || !userData) {
@@ -66,10 +73,10 @@ export default function Login() {
                         {errorMessage && <div className="p-3 text-xs font-bold text-red-600 bg-red-50 rounded-md border border-red-200">{errorMessage}</div>}
 
                         <div>
-                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">User ID or Username</label>
+                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">Username</label>
                             <div className="relative">
                                 <I.UserSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                                <input required type="text" placeholder="e.g. USR-001 or rgomez" value={loginInput} onChange={e => setLoginInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
+                                <input required type="text" placeholder="e.g. rgomez" value={loginInput} onChange={e => setLoginInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
                             </div>
                         </div>
 

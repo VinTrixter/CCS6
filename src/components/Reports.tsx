@@ -8,7 +8,7 @@ import * as I from "./icons";
 type ReportRecord = TERM_STANDING & { student: EnrichedStudent; yearLevel?: number };
 
 export default function Reports() {
-    const { students, programs, activeTerm, activeUser, standings, can, setActiveView, setFocusedStudentID, pendingReportFilter, setPendingReportFilter, terms } = useStore();
+    const { students, programs, programCourses, activeTerm, activeUser, standings, can, setActiveView, setFocusedStudentID, pendingReportFilter, setPendingReportFilter, terms } = useStore();
     const [printDate] = useState(() => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
 
     const statusFilter = pendingReportFilter;
@@ -56,9 +56,12 @@ export default function Reports() {
         return () => { isMounted = false; };
     }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails]);
 
-    // FIXED: Safely computes historical year level using explicit snapshot or chronological math
     const calcYearLevel = (record: ReportRecord) => {
-        return record.yearLevel || Math.max(1, parseInt(targetTermDetails?.termSY.split('-')[0] || "0") - record.student.yearEnrolled + 1);
+        if (record.yearLevel) return record.yearLevel;
+        const progYearLevels = programCourses.filter(pc => pc.programCode === record.student.programCode).map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
+        const dynamicMax = progYearLevels.length > 0 ? Math.max(...progYearLevels) : 4;
+        const chronologicalYear = Math.max(1, parseInt(targetTermDetails?.termSY.split('-')[0] || "0") - record.student.yearEnrolled + 1);
+        return Math.min(dynamicMax, chronologicalYear);
     };
 
     return (
@@ -111,12 +114,13 @@ export default function Reports() {
 
                         <div className="flex-[1.5] min-w-[140px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Program</label>
-                            <select value={programFilter} onChange={(e) => setProgramFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Programs</option>{programs.map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                            {/* FIXED: Applied strict isArchived filter to hide dead curriculums from Report Filter dropdown */}
+                            <select value={programFilter} onChange={(e) => setProgramFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Programs</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                         </div>
 
                         <div className="flex-1 min-w-[100px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Year</label>
-                            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Years</option>{[1, 2, 3, 4].map(y => <option key={y} value={y.toString()}>Year {y}</option>)}</select>
+                            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Years</option>{[1, 2, 3, 4, 5, 6].map(y => <option key={y} value={y.toString()}>Year {y}</option>)}</select>
                         </div>
 
                         <div className="shrink-0 w-full sm:w-auto">

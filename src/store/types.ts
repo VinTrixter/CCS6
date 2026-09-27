@@ -39,6 +39,7 @@ export interface DEGREE_PROGRAM {
     programTitle: string;
     curriculumYear: string;
     passingGradeThreshold?: number;
+    isArchived?: boolean; // FIXED: Formalized to strictly type the soft-deletion model
 }
 
 export interface COURSE {
@@ -81,7 +82,7 @@ export interface TERM_STANDING {
     semCQPA: number;
     termAcademicStatus: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
     isConsecutiveOP: boolean;
-    yearLevel?: number; // FIXED: Added for historical year level snapshotting
+    yearLevel?: number;
     studentID: string;
     termID: string;
 }
