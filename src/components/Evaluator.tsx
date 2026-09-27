@@ -88,8 +88,30 @@ export default function Evaluator() {
     const [localTerm, setLocalTerm] = useState<string>(activeTerm);
 
     const searchResults = students.filter(s => {
-        const compositeString = `${s.studFirstName} ${s.studLastName} ${s.studLastName}, ${s.studFirstName} ${s.studentID}`.toLowerCase();
-        return compositeString.includes(searchQuery.toLowerCase().trim());
+        const q = searchQuery.toLowerCase().trim();
+        const qNoHyphens = q.replace(/-/g, '');
+
+        const f = s.studFirstName.toLowerCase();
+        const l = s.studLastName.toLowerCase();
+        const m = s.studMiddleName ? s.studMiddleName.toLowerCase() : "";
+        const mi = m ? m.charAt(0) : "";
+        const id = s.studentID.toLowerCase();
+        const idFlat = id.replace(/-/g, '');
+
+        const compositeString = `
+            ${f} ${l} 
+            ${l}, ${f} 
+            ${l} ${f} 
+            ${f} ${m} ${l} 
+            ${l} ${f} ${m} 
+            ${f} ${mi} ${l} 
+            ${f} ${mi}. ${l} 
+            ${l} ${f} ${mi} 
+            ${l} ${f} ${mi}. 
+            ${id}
+        `.toLowerCase();
+
+        return compositeString.includes(q) || (qNoHyphens.length > 0 && idFlat.includes(qNoHyphens));
     });
 
     const termStanding = standings.find(ts => ts.studentID === selectedStudent?.studentID && ts.termID === localTerm);
@@ -104,7 +126,12 @@ export default function Evaluator() {
     const localTermDetails = terms.find(t => t.termID === localTerm);
     const activeTermObj = terms.find(t => t.termID === activeTerm);
 
-    const displayYearLevel = termStanding?.yearLevel || Math.max(1, parseInt(localTermDetails?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+    const dynamicMaxYear = selectedStudent ? (() => {
+        const progYearLevels = programCourses.filter(pc => pc.programCode === selectedStudent.programCode).map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
+        return progYearLevels.length > 0 ? Math.max(...progYearLevels) : 4;
+    })() : 4;
+    const chronologicalYear = Math.max(1, parseInt(localTermDetails?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+    const displayYearLevel = termStanding?.yearLevel || Math.min(dynamicMaxYear, chronologicalYear);
 
     const isReadOnly = selectedStudent ? selectedStudent.accountStatus !== 'Active' : false;
 
@@ -185,7 +212,7 @@ export default function Evaluator() {
         setIsLoading(true);
 
         const { data: newRecords, newStanding, updatedStudentYearLevel, error } = await backendAPI.generateAutoPopulateRecords(
-            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings
+            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies
         );
 
         if (error) {
@@ -286,6 +313,7 @@ export default function Evaluator() {
 
         const firstName = formData.firstName.trim();
         const lastName = formData.lastName.trim();
+        const middleName = formData.middleName.trim();
 
         if (!firstName || !lastName) {
             return alert("Names cannot be empty or just spaces.");
@@ -295,9 +323,12 @@ export default function Evaluator() {
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
+        if (middleName && !nameRegex.test(middleName)) {
+            return alert("Middle name must only contain letters, spaces, and hyphens.");
+        }
 
         const newStudent: EnrichedStudent = {
-            studentID: formData.studentID, studFirstName: firstName, studMiddleName: formData.middleName.trim(), studLastName: lastName,
+            studentID: formData.studentID, studFirstName: firstName, studMiddleName: middleName, studLastName: lastName,
             shsTrack: formData.shsTrack as EnrichedStudent["shsTrack"], yearLevel: Number(formData.yearLevel) as EnrichedStudent["yearLevel"], accountStatus: "Active", programCode: formData.programCode,
             yearEnrolled: Number(formData.yearEnrolled)
         };
@@ -315,6 +346,7 @@ export default function Evaluator() {
 
         const firstName = editFormData.studFirstName.trim();
         const lastName = editFormData.studLastName.trim();
+        const middleName = editFormData.studMiddleName?.trim() || "";
 
         if (!firstName || !lastName) {
             return alert("Names cannot be empty or just spaces.");
@@ -324,12 +356,15 @@ export default function Evaluator() {
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
+        if (middleName && !nameRegex.test(middleName)) {
+            return alert("Middle name must only contain letters, spaces, and hyphens.");
+        }
 
         const updatedStudent: EnrichedStudent = {
             ...editFormData,
             studFirstName: firstName,
             studLastName: lastName,
-            studMiddleName: editFormData.studMiddleName?.trim() || ""
+            studMiddleName: middleName
         };
 
         const { data, error } = await backendAPI.updateStudent(updatedStudent, students, activeTerm);
@@ -412,7 +447,8 @@ export default function Evaluator() {
                             <input placeholder="Middle Name (Optional)" value={formData.middleName} onChange={e => setFormData({...formData, middleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <input required placeholder="Last Name" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                             <div className="grid grid-cols-2 gap-3">
-                                <select required value={formData.programCode} onChange={e => setFormData({...formData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Program...</option>{programs.map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                {/* FIXED: Applied strict isArchived filter to Ghost Program dropdown mappings */}
+                                <select required value={formData.programCode} onChange={e => setFormData({...formData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Program...</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                 <select required value={formData.yearLevel} onChange={e => setFormData({...formData, yearLevel: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>Year Lvl...</option>{[1,2,3,4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                 <select required value={formData.shsTrack} onChange={e => setFormData({...formData, shsTrack: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="" disabled hidden>SHS Track...</option><option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option></select>
                                 <input required type="number" placeholder="Year Enrolled" value={formData.yearEnrolled} onChange={e => setFormData({...formData, yearEnrolled: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-2 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
@@ -480,7 +516,8 @@ export default function Evaluator() {
                                                 <input type="text" placeholder="Middle Name" value={editFormData.studMiddleName || ""} onChange={e => setEditFormData({...editFormData, studMiddleName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                                                 <input type="text" placeholder="Last Name" value={editFormData.studLastName} onChange={e => setEditFormData({...editFormData, studLastName: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors" />
                                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{programs.map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                                    {/* FIXED: Applied strict isArchived filter to Ghost Program dropdown mappings */}
+                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                                     <select value={editFormData.yearLevel} onChange={e => setEditFormData({...editFormData, yearLevel: Number(e.target.value) as EnrichedStudent["yearLevel"]})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                                     <select value={editFormData.shsTrack} onChange={e => setEditFormData({...editFormData, shsTrack: e.target.value as EnrichedStudent["shsTrack"]})} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1.5 text-sm outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors">
                                                         <option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option>
@@ -498,7 +535,6 @@ export default function Evaluator() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            /* FIXED: Unified responsive flex container that flows inline on mobile, but rigidly locks into 2 grid rows on desktop. Restored desktop font sizes. */
                                             <div className="mt-5 flex flex-wrap lg:grid lg:grid-cols-12 gap-y-4 gap-x-4 lg:gap-x-6 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 transition-colors">
                                                 <div className="flex-1 min-w-fit lg:col-span-4">
                                                     <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">QPA</div>

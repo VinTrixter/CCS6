@@ -13,14 +13,12 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
     const { students, standings, activeTerm, activeUser, remarks, setRemarks, pushAudit } = useStore();
     const [localSelectedID, setLocalSelectedID] = useState<string>("");
 
-    // FIXED: Segmented Control to swap between ATS and All Students
     const [filterMode, setFilterMode] = useState<'ats' | 'all'>('ats');
     const [searchQuery, setSearchQuery] = useState("");
 
     const [shiftingTo, setShiftingTo] = useState<string>("");
     const [printDate, setPrintDate] = useState<string>("");
 
-    // FIXED: Dynamic Signature Inputs
     const [deptName, setDeptName] = useState<string>("IT/IS/CS/");
     const [chairName, setChairName] = useState<string>("");
     const [deanName, setDeanName] = useState<string>("Asst. Prof. Joy M. Dy");
@@ -41,10 +39,33 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
     const atsStandings = standings.filter(ts => ts.termID === activeTerm && ts.termAcademicStatus === 'Advised to Shift');
     const atsStudents = students.filter(s => atsStandings.some(ts => ts.studentID === s.studentID));
 
+    // FIXED: Advanced composite search engine accommodating permutations (Phase 4)
     const allSearchResults = students.filter(s => {
         if (!searchQuery) return false;
-        const compositeString = `${s.studFirstName} ${s.studLastName} ${s.studLastName}, ${s.studFirstName} ${s.studentID}`.toLowerCase();
-        return compositeString.includes(searchQuery.toLowerCase().trim());
+        const q = searchQuery.toLowerCase().trim();
+        const qNoHyphens = q.replace(/-/g, '');
+
+        const f = s.studFirstName.toLowerCase();
+        const l = s.studLastName.toLowerCase();
+        const m = s.studMiddleName ? s.studMiddleName.toLowerCase() : "";
+        const mi = m ? m.charAt(0) : "";
+        const id = s.studentID.toLowerCase();
+        const idFlat = id.replace(/-/g, '');
+
+        const compositeString = `
+            ${f} ${l} 
+            ${l}, ${f} 
+            ${l} ${f} 
+            ${f} ${m} ${l} 
+            ${l} ${f} ${m} 
+            ${f} ${mi} ${l} 
+            ${f} ${mi}. ${l} 
+            ${l} ${f} ${mi} 
+            ${l} ${f} ${mi}. 
+            ${id}
+        `.toLowerCase();
+
+        return compositeString.includes(q) || (qNoHyphens.length > 0 && idFlat.includes(qNoHyphens));
     });
 
     const targetStudent = students.find(s => s.studentID === currentSelectedID);
@@ -178,7 +199,6 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
                             <img src="/imgSilliman.png" alt="Silliman Logo" className="h-24 w-24 object-contain shrink-0" />
                             <div className="border-l-2 border-dashed border-black pl-6 flex-1">
                                 <h2 className="text-xl tracking-[0.15em] text-black">COLLEGE OF COMPUTER STUDIES</h2>
-                                {/* FIXED: Shrunk from text-4xl to text-[28px] and tightened tracking to fit perfectly on one line */}
                                 <h1 className="text-[28px] font-serif tracking-widest mt-1 mb-1 text-black font-bold">SILLIMAN UNIVERSITY</h1>
                                 <p className="text-[15px] italic font-serif text-black">Building Competence, Character & Faith</p>
                             </div>
@@ -223,7 +243,6 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
                                 <div className="mb-4">Noted by:</div>
                                 <div className="ml-10 flex flex-col gap-10">
                                     <div className="w-[240px]">
-                                        {/* FIXED: Dynamic string-length sizing logic prevents the Chairperson name from expanding the fixed border */}
                                         <div className={`border-b border-black font-bold text-center h-5 mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${chairName.length > 22 ? 'text-[11px] pt-1' : 'text-[15px]'}`}>
                                             {chairName.toUpperCase()}
                                         </div>
@@ -239,7 +258,7 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
 
                     </div>
                 </div>
-            )}s
+            )}
         </>
     );
 }

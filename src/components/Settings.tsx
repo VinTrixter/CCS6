@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useStore } from "../store/store";
 import { backendAPI } from "../backend/api";
-import type { ACADEMIC_TERM, SYSTEM_SETTINGS } from "../store/types";
+import type { ACADEMIC_TERM, SYSTEM_SETTINGS, RETENTION_POLICY } from "../store/types";
 import * as I from "./icons";
 
 type SettingsTab = "profile" | "system" | "audit";
@@ -28,6 +28,13 @@ export default function Settings() {
         && !terms.some(t => t.termSY.startsWith(startYear));
     const [showCustomPolicy, setShowCustomPolicy] = useState(false);
     const [customPolicies, setCustomPolicies] = useState<Record<string, { major: string, minor: string }>>({});
+
+    // FIXED: Added states for the dynamic Retention Policy Editor
+    const [showEditPolicy, setShowEditPolicy] = useState(false);
+    const [editPolicies, setEditPolicies] = useState<Record<string, { policyID?: string, major: string, minor: string }>>({});
+
+    const activeTermObj = terms.find(t => t.termID === activeTerm);
+    const activeTermYear = activeTermObj ? parseInt(activeTermObj.termSY.split('-')[0]) : 0;
 
     useEffect(() => {
         if (pendingSettingsTab) {
@@ -59,7 +66,11 @@ export default function Settings() {
             const maxPrior = prior.length > 0 ? Math.max(...prior.map(p => p.effectiveYear)) : null;
 
             const initPol: Record<string, { major: string, minor: string }> = {};
-            programs.forEach(prog => {
+
+            // FIXED: Automatically filter out soft-deleted and future programs from the tabular list
+            const relevantPrograms = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= syNum);
+
+            relevantPrograms.forEach(prog => {
                 if (maxPrior !== null) {
                     const existing = retentionPolicies.find(p => p.effectiveYear === maxPrior && p.programCode === prog.programCode);
                     initPol[prog.programCode] = {
@@ -118,6 +129,7 @@ export default function Settings() {
             setTerms(terms.map(t => ({ ...t, isCurrent: t.termID === activeTerm })));
             pushAudit("UPDATED_ACTIVE_TERM", activeTerm);
             alert("System environment variables updated successfully.");
+            setShowEditPolicy(false);
         }
         setIsSaving(false);
     };
@@ -159,7 +171,10 @@ export default function Settings() {
             }));
         }
 
-        const { error, newPolicies } = await backendAPI.createTerm(newTerm, parseInt(startYear), isNewCohort, payloadPolicies, retentionPolicies, programs);
+        // FIXED: Filter out archived and non-effective programs natively before saving policies to database
+        const relevantProgsToSave = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= parseInt(startYear));
+
+        const { error, newPolicies } = await backendAPI.createTerm(newTerm, parseInt(startYear), isNewCohort, payloadPolicies, retentionPolicies, relevantProgsToSave);
 
         if (error) {
             alert("Database Error: Could not create term. " + error);
@@ -173,6 +188,61 @@ export default function Settings() {
             setStartYear("");
             setSem("1st Semester");
             setShowCustomPolicy(false);
+        }
+        setIsSaving(false);
+    };
+
+    // FIXED: Triggers and sets dynamic edit states specific to the currently selected Academic Term
+    const openEditPolicy = () => {
+        if (!showEditPolicy) {
+            const initPol: Record<string, { policyID?: string, major: string, minor: string }> = {};
+            const relevantPrograms = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= activeTermYear);
+
+            relevantPrograms.forEach(prog => {
+                const existing = retentionPolicies.find(p => p.effectiveYear === activeTermYear && p.programCode === prog.programCode);
+                initPol[prog.programCode] = {
+                    policyID: existing?.policyID,
+                    major: existing ? existing.majorPassingGrade.toString() : "2.0",
+                    minor: existing ? existing.minorPassingGrade.toString() : "1.0"
+                };
+            });
+            setEditPolicies(initPol);
+        }
+        setShowEditPolicy(!showEditPolicy);
+    };
+
+    // FIXED: Processes the edited policies and performs strict Javascript math validations
+    const handleUpdatePolicies = async (e: React.SyntheticEvent) => {
+        e.preventDefault();
+
+        const policiesToUpdate: RETENTION_POLICY[] = [];
+        for (const progCode of Object.keys(editPolicies)) {
+            const majorNum = parseFloat(editPolicies[progCode].major);
+            const minorNum = parseFloat(editPolicies[progCode].minor);
+
+            if (isNaN(majorNum) || majorNum < 0.0 || majorNum > 4.0 || isNaN(minorNum) || minorNum < 0.0 || minorNum > 4.0) {
+                return alert(`Invalid grade thresholds for ${progCode}. Must be a number between 0.0 and 4.0.`);
+            }
+
+            policiesToUpdate.push({
+                policyID: editPolicies[progCode].policyID || `RP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+                programCode: progCode,
+                effectiveYear: activeTermYear,
+                majorPassingGrade: majorNum,
+                minorPassingGrade: minorNum
+            });
+        }
+
+        setIsSaving(true);
+        const { error } = await backendAPI.updateRetentionPolicies(policiesToUpdate);
+        if (error) {
+            alert("Database Error: Could not update policies. " + error);
+        } else {
+            const otherPolicies = retentionPolicies.filter(p => p.effectiveYear !== activeTermYear);
+            setRetentionPolicies([...otherPolicies, ...policiesToUpdate]);
+            pushAudit("UPDATED_RETENTION_POLICIES", `AY ${activeTermObj?.termSY}`);
+            alert("Retention policies updated successfully.");
+            setShowEditPolicy(false);
         }
         setIsSaving(false);
     };
@@ -236,8 +306,39 @@ export default function Settings() {
                                         <select value={activeTerm} onChange={(e) => setActiveTerm(e.target.value)} disabled={isSaving} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2.5 text-sm font-semibold outline-none focus:border-blue-700 disabled:opacity-50 transition-colors">
                                             {terms.map(t => <option key={t.termID} value={t.termID}>{t.termSem}, AY {t.termSY} {t.isCurrent ? "(Current)" : ""}</option>)}
                                         </select>
-                                        <div className="mt-2 text-right"><button type="submit" disabled={isSaving} className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-50">Set Active Term</button></div>
+                                        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                                            {/* FIXED: Dynamic Edit Policy trigger binds securely to the currently selected term */}
+                                            {activeTermObj ? (
+                                                <button type="button" onClick={openEditPolicy} disabled={isSaving} className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">
+                                                    Edit Retention Policy (AY {activeTermObj.termSY})
+                                                </button>
+                                            ) : <div></div>}
+                                            <button type="submit" disabled={isSaving} className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-50">Set Active Term</button>
+                                        </div>
                                     </form>
+
+                                    {/* FIXED: Rendered custom policy editing array for the active academic term */}
+                                    {showEditPolicy && activeTermObj && (
+                                        <form onSubmit={handleUpdatePolicies} className="flex flex-col gap-4 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-900/10 p-5 shadow-sm transition-colors">
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Edit Custom Thresholds for AY {activeTermObj.termSY}</h4>
+                                                <button type="button" onClick={() => setShowEditPolicy(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><I.X className="h-4 w-4" /></button>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">
+                                                <div>Program</div><div className="text-center">Major Grade</div><div className="text-center">Minor Grade</div>
+                                            </div>
+                                            {programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= activeTermYear).map(prog => (
+                                                <div key={prog.programCode} className="grid grid-cols-3 gap-2 items-center border-b border-slate-100 dark:border-slate-700/50 py-2 last:border-0">
+                                                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{prog.programCode}</div>
+                                                    <input type="number" step="0.1" required value={editPolicies[prog.programCode]?.major || ""} onChange={e => setEditPolicies({...editPolicies, [prog.programCode]: { ...editPolicies[prog.programCode], major: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
+                                                    <input type="number" step="0.1" required value={editPolicies[prog.programCode]?.minor || ""} onChange={e => setEditPolicies({...editPolicies, [prog.programCode]: { ...editPolicies[prog.programCode], minor: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
+                                                </div>
+                                            ))}
+                                            <div className="mt-2 text-right border-t border-slate-200 dark:border-slate-700 pt-4">
+                                                <button type="submit" disabled={isSaving} className="rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50">Save Policy Changes</button>
+                                            </div>
+                                        </form>
+                                    )}
 
                                     <form onSubmit={handleAddTerm} className="flex flex-col rounded-xl border border-blue-100 dark:border-blue-900 bg-white dark:bg-slate-800 p-5 shadow-sm transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-blue-800 dark:text-blue-400">Create New Academic Term</label>
@@ -279,11 +380,11 @@ export default function Settings() {
                                                                 <div className="grid grid-cols-3 gap-2 border-b border-slate-100 dark:border-slate-700 pb-2 text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">
                                                                     <div>Program</div><div className="text-center">Major Grade</div><div className="text-center">Minor Grade</div>
                                                                 </div>
-                                                                {programs.map(prog => (
+                                                                {programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= parseInt(startYear)).map(prog => (
                                                                     <div key={prog.programCode} className="grid grid-cols-3 gap-2 items-center border-b border-slate-50 dark:border-slate-700/50 py-2 last:border-0">
                                                                         <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{prog.programCode}</div>
-                                                                        <input type="number" step="0.1" min="0" max="4" value={customPolicies[prog.programCode]?.major || "2.0"} onChange={e => setCustomPolicies({...customPolicies, [prog.programCode]: { ...customPolicies[prog.programCode], major: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
-                                                                        <input type="number" step="0.1" min="0" max="4" value={customPolicies[prog.programCode]?.minor || "1.0"} onChange={e => setCustomPolicies({...customPolicies, [prog.programCode]: { ...customPolicies[prog.programCode], minor: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
+                                                                        <input type="number" step="0.1" required min="0" max="4" value={customPolicies[prog.programCode]?.major || "2.0"} onChange={e => setCustomPolicies({...customPolicies, [prog.programCode]: { ...customPolicies[prog.programCode], major: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
+                                                                        <input type="number" step="0.1" required min="0" max="4" value={customPolicies[prog.programCode]?.minor || "1.0"} onChange={e => setCustomPolicies({...customPolicies, [prog.programCode]: { ...customPolicies[prog.programCode], minor: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
                                                                     </div>
                                                                 ))}
                                                             </div>
