@@ -723,7 +723,8 @@ export default function Evaluator() {
                                                 return semW[tB.termSem] - semW[tA.termSem];
                                             }).map(ts => {
                                                 const term = terms.find(t => t.termID === ts.termID);
-                                                const isExpanded = expandedTerms[ts.termID];
+                                                // PHASE 4 FIX: Swapped accordion mapping key from termID to deterministic standingID
+                                                const isExpanded = expandedTerms[ts.standingID];
                                                 let histStatus = ts.termAcademicStatus as string;
                                                 if (histStatus.toUpperCase() === 'ADVISED-TO-SHIFT') histStatus = 'Advised to Shift';
                                                 if (histStatus.toUpperCase() === 'ON-PROBATION') histStatus = 'On-Probation';
@@ -732,7 +733,7 @@ export default function Evaluator() {
 
                                                 return (
                                                     <React.Fragment key={ts.standingID}>
-                                                        <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.termID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                        <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.standingID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                             <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 dark:text-slate-500 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800 dark:text-slate-200">{term?.termSem}</div><div className="text-xs text-slate-500 dark:text-slate-400">AY {term?.termSY}</div></div></td>
                                                             <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.semCQPA.toFixed(2)}</td>
                                                             <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${histStatus === 'Advised to Shift' ? 'bg-coral-tint dark:bg-red-900/30 text-coral dark:text-red-400' : histStatus === 'On-Probation' ? 'bg-amber-tint dark:bg-amber-900/30 text-amber dark:text-amber-400' : histStatus === 'Unencoded' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{histStatus}</span></td>

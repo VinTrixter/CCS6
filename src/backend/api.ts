@@ -154,7 +154,8 @@ const cascadeStandings = (
         const validGradesCount = termRecords.filter(r => r.finalGrade !== null || r.gradeRemarks !== null).length;
         const isTermIncomplete = validGradesCount === 0;
 
-        const pastStandings = newStandings.filter(ts => {
+        const pastStandings = [...unaffectedStandings, ...newStandings].filter(ts => {
+            if (ts.studentID !== student.studentID) return false;
             const tsTerm = terms.find(t => t.termID === ts.termID);
             return tsTerm && compareTerms(tsTerm, activeTermObj) < 0;
         }).sort((a, b) => {
@@ -163,18 +164,24 @@ const cascadeStandings = (
             if (termA && termB) return compareTerms(termB, termA);
             return 0;
         });
+
         const validPastStandings = pastStandings.filter(ts => ts.termAcademicStatus !== 'Unencoded');
         let isConsecutiveOP = false;
         if (validPastStandings.length > 0) {
-            const immediatePastStatus = validPastStandings[0].termAcademicStatus;
-            if (immediatePastStatus === "On-Probation" || immediatePastStatus === "Advised to Shift") {
+            const rawStatus = (validPastStandings[0].termAcademicStatus as string).replace(/-/g, ' ');
+            if (rawStatus === "On Probation" || rawStatus === "Advised to Shift") {
                 isConsecutiveOP = true;
             }
         }
 
         let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
+        const isFullyWithdrawn = !isTermIncomplete && termUnits === 0 && termRecords.length > 0;
+
         if (isTermIncomplete) {
             status = "Unencoded";
+        } else if (isFullyWithdrawn) {
+            status = validPastStandings.length > 0 ? (validPastStandings[0].termAcademicStatus as "Regular" | "On-Probation" | "Advised to Shift") : "Regular";
+            isConsecutiveOP = false;
         } else if (majorStrikeTriggered) {
             status = "Advised to Shift";
         } else {
@@ -190,7 +197,7 @@ const cascadeStandings = (
             }
         }
 
-        const standingID = existingStanding ? existingStanding.standingID : generateID('ST-');
+        const standingID = existingStanding ? existingStanding.standingID : `ST-${student.studentID}-${activeTerm}`;
         newStandings.push({
             standingID, termQPA, semCQPA, termAcademicStatus: status,
             isConsecutiveOP, yearLevel: evaluatedYearLevel, studentID: student.studentID, termID: activeTerm
@@ -397,7 +404,32 @@ export const backendAPI = {
             yearLevel: pc.yrLevel !== undefined ? Number(pc.yrLevel) : Number(pc.yearLevel)
         }));
 
-        const mappedStandings: TERM_STANDING[] = (standRes.data as TERM_STANDING[]).map(ts => ({
+        const rawStandings = standRes.data as TERM_STANDING[];
+        const uniqueStandingsMap = new Map<string, TERM_STANDING>();
+        const standingsToDelete: string[] = [];
+
+        rawStandings.forEach(ts => {
+            const key = `${ts.studentID}-${ts.termID}`;
+            if (uniqueStandingsMap.has(key)) {
+                const existing = uniqueStandingsMap.get(key)!;
+                if (ts.semCQPA > existing.semCQPA || ts.termQPA > existing.termQPA || (ts.termAcademicStatus !== 'Unencoded' && existing.termAcademicStatus === 'Unencoded')) {
+                    standingsToDelete.push(existing.standingID);
+                    uniqueStandingsMap.set(key, ts);
+                } else {
+                    standingsToDelete.push(ts.standingID);
+                }
+            } else {
+                uniqueStandingsMap.set(key, ts);
+            }
+        });
+
+        if (standingsToDelete.length > 0) {
+            supabase.from('ADVISING_REMARK').delete().in('standingID', standingsToDelete).then(() => {
+                supabase.from('TERM_STANDING').delete().in('standingID', standingsToDelete).then();
+            });
+        }
+
+        const mappedStandings: TERM_STANDING[] = Array.from(uniqueStandingsMap.values()).map(ts => ({
             ...ts,
             termAcademicStatus: (ts.termAcademicStatus as string) === 'Advised-to-Shift' ? 'Advised to Shift' : ts.termAcademicStatus
         }));
@@ -664,7 +696,7 @@ export const backendAPI = {
             const calculatedYearLevel = majorYearLevels.length > 0 ? Math.min(...majorYearLevels) : targetYearLevel;
 
             const basicStanding: TERM_STANDING = {
-                standingID: generateID('ST-'), termQPA: 0, semCQPA: 0,
+                standingID: `ST-${student.studentID}-${activeTerm}`, termQPA: 0, semCQPA: 0,
                 termAcademicStatus: 'Unencoded', isConsecutiveOP: false,
                 yearLevel: calculatedYearLevel,
                 studentID: student.studentID, termID: activeTerm
@@ -707,7 +739,7 @@ export const backendAPI = {
                 finalGrade = 0.0; isFailed = true;
             } else if (["INC", "NG", "W", "D"].includes(upperVal)) {
                 gradeRemarks = upperVal;
-                if (["NG", "D"].includes(upperVal)) isFailed = true;
+                if (["NG"].includes(upperVal)) isFailed = true;
             } else {
                 const parsedGrade = Number(upperVal);
                 if (isNaN(parsedGrade) || parsedGrade < 0.0 || parsedGrade > 4.0) {
@@ -720,7 +752,7 @@ export const backendAPI = {
 
         let updatedRecord: ACADEMIC_RECORD;
         const updatedRecordsArray = [...currentRecords];
-        const skipYearLevelAutoCalc = !!recordID;
+        const skipYearLevelAutoCalc = false;
 
         if (recordID) {
             updatedRecord = { ...currentRecords.find(r => r.recordID === recordID)!, finalGrade, isFailed, gradeRemarks: gradeRemarks || null };

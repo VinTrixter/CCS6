@@ -20,20 +20,10 @@ export default function Dashboard() {
     const activeStudentsCount = students.filter(s => s.accountStatus === 'Active').length;
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
 
+    // Isolated the metric to strictly calculate Advised to Shift for the current active term
+    const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
+
     const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser, records, terms, students, programCourses);
-
-    let advisedToShiftCount = 0;
-    students.forEach(student => {
-        if (student.accountStatus !== 'Active') return;
-
-        const currentTs = currentTermStandings.find(ts => ts.studentID === student.studentID);
-        const isCurrentATS = currentTs && currentTs.termAcademicStatus === 'Advised to Shift';
-        const isPendingATS = manualReviewList.some(r => r.studentID === student.studentID && r.issueDescription.includes("Unresolved ATS"));
-
-        if (isCurrentATS || isPendingATS) {
-            advisedToShiftCount++;
-        }
-    });
 
     const navigateToReport = (filter: string) => {
         setPendingReportFilter(filter);
@@ -92,12 +82,13 @@ export default function Dashboard() {
                         <h2 className="font-bold text-slate-800 dark:text-slate-100">Pending Automated Reviews</h2>
                         <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Records dynamically flag and clear as system dependencies are met.</p>
                     </div>
-                    <div className={`max-h-[400px] overflow-y-auto transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50/30 dark:bg-blue-900/20' : 'bg-white dark:bg-slate-800'}`}>
+                    <div className={`max-h-[400px] overflow-auto transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50/30 dark:bg-blue-900/20' : 'bg-white dark:bg-slate-800'}`}>
                         <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-                            <thead className="sticky top-0 z-10 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-xs uppercase text-slate-400 dark:text-slate-500">
+                            <thead className="border-b border-slate-100 dark:border-slate-700 text-xs uppercase text-slate-400 dark:text-slate-500">
                             <tr>
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
-                                <th className="px-5 py-4 font-semibold">Semestral QPA</th>
+                                {/* PHASE 4 FIX: Render Cumulative CQPA as primary metric */}
+                                <th className="px-5 py-4 font-semibold">Cumulative CQPA</th>
                                 <th className="px-5 py-4 font-semibold">Current Standing</th>
                                 <th className="px-5 py-4 font-semibold">Issue / Concern</th>
                                 <th className="px-5 py-4 text-right font-semibold">Action</th>
@@ -108,7 +99,10 @@ export default function Dashboard() {
                                 return (
                                     <tr key={`${ts.standingID}-${ts.targetTermID}`} className="transition hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                         <td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">{ts.studentID}</td>
-                                        <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(3)}</td>
+                                        <td className="px-5 py-4 font-mono font-bold text-slate-800 dark:text-slate-200">
+                                            {ts.semCQPA.toFixed(2)}
+                                            <span className="block text-[11px] font-normal text-slate-400">Term: {ts.termQPA.toFixed(2)}</span>
+                                        </td>
                                         <td className="px-5 py-4">
                                             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300'}`}>
                                               {ts.termAcademicStatus}
