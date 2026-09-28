@@ -493,6 +493,17 @@ export const backendAPI = {
         return { error: null };
     },
 
+    async deleteTerm(termID: string, isCurrent: boolean, records: ACADEMIC_RECORD[], standings: TERM_STANDING[]) {
+        if (isCurrent) return { error: "You cannot delete the active academic term. Please set another term as active first." };
+        const hasRecords = records.some(r => r.termID === termID);
+        const hasStandings = standings.some(ts => ts.termID === termID);
+        if (hasRecords || hasStandings) {
+            return { error: "Cannot delete this term because it contains immutable academic records or standings." };
+        }
+        const { error } = await supabase.from('ACADEMIC_TERM').delete().eq('termID', termID);
+        return { error: error ? error.message : null };
+    },
+
     async updateRetentionPolicies(policies: RETENTION_POLICY[]) {
         const { error } = await supabase.from('RETENTION_POLICY').upsert(policies, { onConflict: 'policyID' });
         return { error: error ? error.message : null };
@@ -541,7 +552,6 @@ export const backendAPI = {
         if (termDetails.termID === globalActiveTermID) {
             const curriculum = programCourses.filter(pc => pc.programCode === student.programCode && pc.yearLevel === student.yearLevel && pc.termSem === termDetails.termSem);
             curriculum.forEach(pc => {
-                // ADDED: Verify if the student has already passed this specific curriculum subject historically
                 const hasPassed = records.some(r => {
                     if (r.studentID !== student.studentID) return false;
                     if (r.programCourseID !== pc.programCourseID) return false;
@@ -550,7 +560,6 @@ export const backendAPI = {
                     return r.finalGrade >= passMark;
                 });
 
-                // ADDED: Block the ghost row if hasPassed evaluates to true
                 if (!displayRows.some(row => row.courseCode === pc.courseCode) && !dismissedCourses.includes(pc.courseCode) && !hasPassed) {
                     const baseCourse = courses.find(c => c.courseCode === pc.courseCode);
                     let isMissingPrereq = false;
@@ -1121,15 +1130,24 @@ export const backendAPI = {
     async generateReport(
         statusFilter: string, programFilter: string, yearFilter: string, accountFilter: string,
         students: EnrichedStudent[], activeStandings: TERM_STANDING[], targetTermDetails?: ACADEMIC_TERM,
-        allStandings: TERM_STANDING[] = [], allTerms: ACADEMIC_TERM[] = []
+        allStandings: TERM_STANDING[] = [], allTerms: ACADEMIC_TERM[] = [], programCourses: PROGRAM_COURSE[] = []
     ) {
         if (!targetTermDetails) return { data: [], error: "No historical term context selected." };
 
         const targetYear = parseInt(targetTermDetails.termSY.split('-')[0]);
 
+        const getDynamicMaxYear = (progCode: string, progCourses: PROGRAM_COURSE[]) => {
+            const levels = progCourses.filter(pc => pc.programCode === progCode).map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
+            return levels.length > 0 ? Math.max(...levels) : 4;
+        };
+
         const data = students.filter(s => s.yearEnrolled <= targetYear).map(student => {
             const ts = activeStandings.find(st => st.studentID === student.studentID);
-            const chronologicalYearLevel = Math.max(1, targetYear - student.yearEnrolled + 1);
+
+            const dynamicMax = getDynamicMaxYear(student.programCode, programCourses);
+            const rawChronological = Math.max(1, targetYear - student.yearEnrolled + 1);
+            const chronologicalYearLevel = Math.min(dynamicMax, rawChronological);
+
             let effectiveStatus = ts ? ts.termAcademicStatus : "Unencoded";
 
             if (allStandings.length > 0 && allTerms.length > 0) {

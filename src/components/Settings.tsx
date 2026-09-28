@@ -10,14 +10,12 @@ type SettingsTab = "profile" | "system" | "audit";
 export default function Settings() {
     const { activeUser, setActiveUser, activeTerm, setActiveTerm, auditLogs, can, pushAudit, pendingSettingsTab, setPendingSettingsTab, terms, setTerms, programs, retentionPolicies, setRetentionPolicies, systemSettings, setSystemSettings } = useStore();
     const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
-
     const [auditFilters, setAuditFilters] = useState({ start: "", end: "", user: "", action: "", target: "" });
-    const [isSaving, setIsSaving] = useState(false);
 
+    const [isSaving, setIsSaving] = useState(false);
     const [startYear, setStartYear] = useState<string>("");
     const endYear = startYear.length === 4 ? (parseInt(startYear) + 1).toString() : "";
     const [sem, setSem] = useState<string>("1st Semester");
-
     const [sysBounds, setSysBounds] = useState({
         op: systemSettings?.probationThreshold || 2.0,
         ats: systemSettings?.atsThreshold || 1.0
@@ -26,10 +24,10 @@ export default function Settings() {
     const isNewCohort = startYear.length === 4
         && !retentionPolicies.some(p => p.effectiveYear === parseInt(startYear))
         && !terms.some(t => t.termSY.startsWith(startYear));
+
     const [showCustomPolicy, setShowCustomPolicy] = useState(false);
     const [customPolicies, setCustomPolicies] = useState<Record<string, { major: string, minor: string }>>({});
 
-    // FIXED: Added states for the dynamic Retention Policy Editor
     const [showEditPolicy, setShowEditPolicy] = useState(false);
     const [editPolicies, setEditPolicies] = useState<Record<string, { policyID?: string, major: string, minor: string }>>({});
 
@@ -58,7 +56,6 @@ export default function Settings() {
     const handleStartYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
         setStartYear(val);
-
         if (val.length === 4) {
             setShowCustomPolicy(false);
             const syNum = parseInt(val);
@@ -66,10 +63,7 @@ export default function Settings() {
             const maxPrior = prior.length > 0 ? Math.max(...prior.map(p => p.effectiveYear)) : null;
 
             const initPol: Record<string, { major: string, minor: string }> = {};
-
-            // FIXED: Automatically filter out soft-deleted and future programs from the tabular list
             const relevantPrograms = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= syNum);
-
             relevantPrograms.forEach(prog => {
                 if (maxPrior !== null) {
                     const existing = retentionPolicies.find(p => p.effectiveYear === maxPrior && p.programCode === prog.programCode);
@@ -88,21 +82,18 @@ export default function Settings() {
     const handleProfileSave = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!activeUser) return;
-
         const firstName = activeUser.userFirstName.trim();
         const lastName = activeUser.userLastName.trim();
 
         if (!firstName || !lastName) {
             return alert("Names cannot be empty or just spaces.");
         }
-
-        const nameRegex = /^[A-Za-z\s\-ñÑ]+$/;
+        const nameRegex = /^[A-Za-z\s\- ]+$/;
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
 
         setIsSaving(true);
-
         const { error } = await backendAPI.updateUserProfile(
             activeUser.userID,
             firstName,
@@ -152,7 +143,6 @@ export default function Settings() {
     const handleAddTerm = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (startYear.length !== 4) return alert("Please enter a valid 4-digit start year.");
-
         const semCode = sem === "1st Semester" ? "1" : sem === "2nd Semester" ? "2" : "3";
         const syStr = `${startYear}-${endYear}`;
         const newID = `T${startYear}-${semCode}`;
@@ -171,9 +161,7 @@ export default function Settings() {
             }));
         }
 
-        // FIXED: Filter out archived and non-effective programs natively before saving policies to database
         const relevantProgsToSave = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= parseInt(startYear));
-
         const { error, newPolicies } = await backendAPI.createTerm(newTerm, parseInt(startYear), isNewCohort, payloadPolicies, retentionPolicies, relevantProgsToSave);
 
         if (error) {
@@ -192,12 +180,10 @@ export default function Settings() {
         setIsSaving(false);
     };
 
-    // FIXED: Triggers and sets dynamic edit states specific to the currently selected Academic Term
     const openEditPolicy = () => {
         if (!showEditPolicy) {
             const initPol: Record<string, { policyID?: string, major: string, minor: string }> = {};
             const relevantPrograms = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= activeTermYear);
-
             relevantPrograms.forEach(prog => {
                 const existing = retentionPolicies.find(p => p.effectiveYear === activeTermYear && p.programCode === prog.programCode);
                 initPol[prog.programCode] = {
@@ -211,19 +197,15 @@ export default function Settings() {
         setShowEditPolicy(!showEditPolicy);
     };
 
-    // FIXED: Processes the edited policies and performs strict Javascript math validations
     const handleUpdatePolicies = async (e: React.SyntheticEvent) => {
         e.preventDefault();
-
         const policiesToUpdate: RETENTION_POLICY[] = [];
         for (const progCode of Object.keys(editPolicies)) {
             const majorNum = parseFloat(editPolicies[progCode].major);
             const minorNum = parseFloat(editPolicies[progCode].minor);
-
             if (isNaN(majorNum) || majorNum < 0.0 || majorNum > 4.0 || isNaN(minorNum) || minorNum < 0.0 || minorNum > 4.0) {
                 return alert(`Invalid grade thresholds for ${progCode}. Must be a number between 0.0 and 4.0.`);
             }
-
             policiesToUpdate.push({
                 policyID: editPolicies[progCode].policyID || `RP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
                 programCode: progCode,
@@ -235,6 +217,7 @@ export default function Settings() {
 
         setIsSaving(true);
         const { error } = await backendAPI.updateRetentionPolicies(policiesToUpdate);
+
         if (error) {
             alert("Database Error: Could not update policies. " + error);
         } else {
@@ -269,7 +252,6 @@ export default function Settings() {
                 <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">System Settings</h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">Manage your profile, system variables, and view security logs.</p>
             </div>
-
             <div className="flex flex-col lg:flex-row overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
                 <div className="w-full lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4">
                     <nav className="flex flex-row lg:flex-col gap-2 overflow-x-auto">
@@ -278,7 +260,6 @@ export default function Settings() {
                         {can('manage_records') && <button onClick={() => setActiveTab("audit")} className={`flex shrink-0 whitespace-nowrap items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "audit" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.ShieldAlert className="h-4 w-4" /> Audit Ledger</button>}
                     </nav>
                 </div>
-
                 <div className="flex-1 p-5 lg:p-8 overflow-y-auto">
                     {activeTab === "profile" && (
                         <div className="max-w-2xl">
@@ -293,11 +274,9 @@ export default function Settings() {
                             </form>
                         </div>
                     )}
-
                     {activeTab === "system" && can('manage_records') && (
                         <div className="max-w-5xl">
                             <h2 className="mb-6 text-lg font-bold text-slate-800 dark:text-slate-100">Global Environment Variables</h2>
-
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                                 <div className="flex flex-col gap-6">
                                     <form onSubmit={handleSystemSave} className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5 transition-colors">
@@ -307,7 +286,6 @@ export default function Settings() {
                                             {terms.map(t => <option key={t.termID} value={t.termID}>{t.termSem}, AY {t.termSY} {t.isCurrent ? "(Current)" : ""}</option>)}
                                         </select>
                                         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                                            {/* FIXED: Dynamic Edit Policy trigger binds securely to the currently selected term */}
                                             {activeTermObj ? (
                                                 <button type="button" onClick={openEditPolicy} disabled={isSaving} className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">
                                                     Edit Retention Policy (AY {activeTermObj.termSY})
@@ -316,8 +294,6 @@ export default function Settings() {
                                             <button type="submit" disabled={isSaving} className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-50">Set Active Term</button>
                                         </div>
                                     </form>
-
-                                    {/* FIXED: Rendered custom policy editing array for the active academic term */}
                                     {showEditPolicy && activeTermObj && (
                                         <form onSubmit={handleUpdatePolicies} className="flex flex-col gap-4 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-900/10 p-5 shadow-sm transition-colors">
                                             <div className="mb-3 flex items-center justify-between">
@@ -339,11 +315,9 @@ export default function Settings() {
                                             </div>
                                         </form>
                                     )}
-
                                     <form onSubmit={handleAddTerm} className="flex flex-col rounded-xl border border-blue-100 dark:border-blue-900 bg-white dark:bg-slate-800 p-5 shadow-sm transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-blue-800 dark:text-blue-400">Create New Academic Term</label>
                                         <p className="mb-6 text-xs text-slate-500 dark:text-slate-400">Initialize a new academic semester for the system. This action is permanent.</p>
-
                                         <div className="grid grid-cols-2 gap-4 mb-4">
                                             <div>
                                                 <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Academic Year</label>
@@ -360,7 +334,6 @@ export default function Settings() {
                                                 </select>
                                             </div>
                                         </div>
-
                                         {isNewCohort && (
                                             <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-900/10 p-5 transition-colors">
                                                 <div className="flex items-start gap-3">
@@ -368,7 +341,6 @@ export default function Settings() {
                                                     <div className="flex-1">
                                                         <h4 className="text-sm font-bold text-amber-800 dark:text-amber-400">New Cohort Detected</h4>
                                                         <p className="mt-1 text-xs text-amber-700 dark:text-amber-500/80">Retention policies for the {startYear} cohort will automatically inherit thresholds from the previous academic year.</p>
-
                                                         {!showCustomPolicy ? (
                                                             <button type="button" onClick={() => setShowCustomPolicy(true)} className="mt-3 rounded-md bg-amber-100 dark:bg-amber-900/40 px-4 py-1.5 text-xs font-bold text-amber-800 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors">Define Custom Policy</button>
                                                         ) : (
@@ -393,13 +365,11 @@ export default function Settings() {
                                                 </div>
                                             </div>
                                         )}
-
                                         <div className="mt-2 text-right border-t border-slate-100 dark:border-slate-700 pt-4">
                                             <button type="submit" disabled={isSaving || startYear.length !== 4} className="rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50">Register Term & Cohort</button>
                                         </div>
                                     </form>
                                 </div>
-
                                 <div className="flex flex-col gap-6">
                                     <form onSubmit={handleBoundsSave} className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5 transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-slate-800 dark:text-slate-200">Academic Standing Boundaries (CQPA)</label>
@@ -422,28 +392,41 @@ export default function Settings() {
                             </div>
                         </div>
                     )}
-
                     {activeTab === "audit" && can('manage_records') && (
                         <div className="flex h-full flex-col">
                             <div className="mb-4 flex flex-col gap-2 shrink-0">
                                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Security Audit Ledger</h2>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Immutable read-only log of session operations.</p>
                             </div>
-
                             <div className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 transition-colors shrink-0">
                                 <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Filter Ledger</div>
-                                <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                                    <input type="date" value={auditFilters.start} onChange={e => setAuditFilters({...auditFilters, start: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" title="Start Date" />
-                                    <input type="date" value={auditFilters.end} onChange={e => setAuditFilters({...auditFilters, end: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" title="End Date" />
-                                    <input type="text" placeholder="User ID..." value={auditFilters.user} onChange={e => setAuditFilters({...auditFilters, user: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" />
-                                    <input type="text" placeholder="Action Type..." value={auditFilters.action} onChange={e => setAuditFilters({...auditFilters, action: e.target.value.toUpperCase()})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" />
-                                    <input type="text" placeholder="Target Search..." value={auditFilters.target} onChange={e => setAuditFilters({...auditFilters, target: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" />
+                                {/* FIXED: Re-structured the audit filters to include visual labels and native math-bounds for Start and End dates (Phase 5) */}
+                                <div className="grid grid-cols-2 gap-3 md:grid-cols-5 items-end">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Start Date</label>
+                                        <input type="date" max={auditFilters.end || undefined} value={auditFilters.start} onChange={e => setAuditFilters({...auditFilters, start: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" title="Start Date" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">End Date</label>
+                                        <input type="date" min={auditFilters.start || undefined} value={auditFilters.end} onChange={e => setAuditFilters({...auditFilters, end: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" title="End Date" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">User ID</label>
+                                        <input type="text" placeholder="User ID..." value={auditFilters.user} onChange={e => setAuditFilters({...auditFilters, user: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Action</label>
+                                        <input type="text" placeholder="Action Type..." value={auditFilters.action} onChange={e => setAuditFilters({...auditFilters, action: e.target.value.toUpperCase()})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Target</label>
+                                        <input type="text" placeholder="Target Search..." value={auditFilters.target} onChange={e => setAuditFilters({...auditFilters, target: e.target.value})} className="rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-800 p-2 text-xs outline-none focus:border-blue-700 dark:focus:border-blue-500" />
+                                    </div>
                                 </div>
                                 <div className="mt-3 text-right">
                                     <button onClick={() => setAuditFilters({ start: "", end: "", user: "", action: "", target: "" })} className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-700 dark:hover:text-blue-400">Clear Filters</button>
                                 </div>
                             </div>
-
                             <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors flex flex-col overflow-hidden">
                                 <div className="max-h-[400px] overflow-y-auto">
                                     <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">

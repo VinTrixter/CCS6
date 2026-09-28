@@ -92,9 +92,9 @@ export default function Dashboard() {
                         <h2 className="font-bold text-slate-800 dark:text-slate-100">Pending Automated Reviews</h2>
                         <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Records dynamically flag and clear as system dependencies are met.</p>
                     </div>
-                    <div className={`overflow-x-auto transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50/30 dark:bg-blue-900/20' : 'bg-white dark:bg-slate-800'}`}>
+                    <div className={`max-h-[400px] overflow-y-auto transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50/30 dark:bg-blue-900/20' : 'bg-white dark:bg-slate-800'}`}>
                         <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-                            <thead className="border-b border-slate-100 dark:border-slate-700 text-xs uppercase text-slate-400 dark:text-slate-500">
+                            <thead className="sticky top-0 z-10 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-xs uppercase text-slate-400 dark:text-slate-500">
                             <tr>
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
                                 <th className="px-5 py-4 font-semibold">Semestral QPA</th>

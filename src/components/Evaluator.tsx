@@ -363,6 +363,7 @@ export default function Evaluator() {
         if (error) return alert(error);
         if (data) setStudents(data);
         if (standingsData) setStandings(standingsData);
+
         setSelectedStudent(updatedStudent);
         pushAudit("UPDATED_STUDENT_RECORD", updatedStudent.studentID);
         setIsEditingProfile(false);
@@ -460,6 +461,7 @@ export default function Evaluator() {
                             <I.Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                             <input type="text" placeholder="Search by ID or Name" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-blue-700 dark:focus:border-blue-500" />
                         </div>
+
                         {searchQuery && (
                             <div className="shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
                                 {searchResults.map(s => (
@@ -492,6 +494,7 @@ export default function Evaluator() {
                                         )}
                                     </div>
                                 )}
+
                                 <div className="shrink-0 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
                                     <div className="h-16 bg-gradient-to-r from-blue-700 to-blue-900 dark:from-blue-600 dark:to-blue-900"></div>
                                     <div className="px-5 pb-5">
@@ -749,7 +752,7 @@ export default function Evaluator() {
                                                                             <tbody>
                                                                             {records.filter(r => r.studentID === selectedStudent?.studentID && r.termID === ts.termID).filter(rec => {
                                                                                 if (rec.finalGrade === null && rec.gradeRemarks === null) return false;
-                                                                                const hasGradedDuplicate = records.some(dup => dup.studentID === selectedStudent?.studentID && dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
+                                                                                const hasGradedDuplicate = records.some(dup => dup.recordID !== rec.recordID && dup.studentID === selectedStudent?.studentID && dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
                                                                                 return !hasGradedDuplicate;
                                                                             }).map(rec => {
                                                                                 const pc = programCourses.find(p => p.programCourseID === rec.programCourseID);

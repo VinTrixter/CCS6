@@ -13,7 +13,6 @@ export default function Reports() {
 
     const statusFilter = pendingReportFilter;
     const setStatusFilter = setPendingReportFilter;
-
     const [programFilter, setProgramFilter] = useState<string>("All");
     const [yearFilter, setYearFilter] = useState<string>("All");
     const [accountFilter, setAccountFilter] = useState<string>("Active");
@@ -45,8 +44,8 @@ export default function Reports() {
         let isMounted = true;
         const fetchReport = async () => {
             setIsLoading(true);
-            // FIXED: Report generation now receives global standings and terms to support historical ATS cross-referencing (Phase 4)
-            const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings, targetTermDetails, standings, terms);
+            // FIXED: Report generation now receives programCourses to support the dynamic year level bounds (Phase 2)
+            const { data, error } = await backendAPI.generateReport(statusFilter, programFilter, yearFilter, accountFilter, students, targetStandings, targetTermDetails, standings, terms, programCourses);
             if (isMounted) {
                 if (error) alert(error);
                 if (data) setReportData(data as ReportRecord[]);
@@ -54,7 +53,7 @@ export default function Reports() {
             }
         };
         void fetchReport();
-    }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails, standings, terms]);
+    }, [statusFilter, programFilter, yearFilter, accountFilter, students, selectedTermID, targetStandings, targetTermDetails, standings, terms, programCourses]);
 
     const calcYearLevel = (record: ReportRecord) => {
         if (record.yearLevel) return record.yearLevel;
@@ -71,10 +70,8 @@ export default function Reports() {
                     <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Reports & Archives</h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Generate and print official academic standing rosters for any term.</p>
                 </div>
-
                 <div className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 shadow-sm transition-colors">
                     <div className="flex flex-wrap items-end gap-3">
-
                         <div className="flex-[2] min-w-[220px] relative" ref={termDropdownRef}>
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Academic Term</label>
                             <button
@@ -101,27 +98,22 @@ export default function Reports() {
                                 </div>
                             )}
                         </div>
-
                         <div className="flex-[1.5] min-w-[160px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Academic Status</label>
                             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All Students">All Students</option><option value="All Flagged">All Flagged (OP + ATS)</option><option value="On-Probation">On-Probation</option><option value="Advised to Shift">Advised to Shift</option><option value="Regular">Regular (Good Standing)</option></select>
                         </div>
-
                         <div className="flex-1 min-w-[110px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Account</label>
                             <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Graduated">Graduated</option><option value="All">All Accounts</option></select>
                         </div>
-
                         <div className="flex-[1.5] min-w-[140px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Program</label>
                             <select value={programFilter} onChange={(e) => setProgramFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Programs</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                         </div>
-
                         <div className="flex-1 min-w-[100px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Year</label>
                             <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 dark:focus:border-blue-500 transition-colors"><option value="All">All Years</option>{[1, 2, 3, 4, 5, 6].map(y => <option key={y} value={y.toString()}>Year {y}</option>)}</select>
                         </div>
-
                         <div className="shrink-0 w-full sm:w-auto">
                             <button onClick={() => window.print()} disabled={!can('generate_forms') || reportData.length === 0 || isLoading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 h-[38px]">
                                 <I.Printer className="h-4 w-4" /> Generate PDF
@@ -167,7 +159,6 @@ export default function Reports() {
                         if (status.toUpperCase() === 'ON-PROBATION') status = 'On-Probation';
                         if (status.toUpperCase() === 'REGULAR') status = 'Regular';
                         if (status.toUpperCase() === 'UNENCODED') status = 'Unencoded';
-
                         return (
                             <tr
                                 key={record.standingID}
