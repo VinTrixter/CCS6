@@ -18,13 +18,27 @@ export default function Dashboard() {
         }
     }, [highlightReviewTable, setHighlightReviewTable]);
 
+    // ...
     const currentTermStandings = standings.filter(ts => ts.termID === activeTerm);
     const activeStudentsCount = students.filter(s => s.accountStatus === 'Active').length;
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
-    const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
 
-    // FIXED: Passed global standings and programCourses to ensure the historical ATS & pending graduation scanners execute correctly (Phase 3)
+    // The manualReviewList generation must happen BEFORE we calculate the new ATS metric
     const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser, records, terms, students, programCourses);
+
+    // FIXED: Expands ATS metric to count both active-term ATS and pending unresolved historical ATS
+    let advisedToShiftCount = 0;
+    students.forEach(student => {
+        if (student.accountStatus !== 'Active') return;
+
+        const currentTs = currentTermStandings.find(ts => ts.studentID === student.studentID);
+        const isCurrentATS = currentTs && currentTs.termAcademicStatus === 'Advised to Shift';
+        const isPendingATS = manualReviewList.some(r => r.studentID === student.studentID && r.issueDescription.includes("Unresolved ATS"));
+
+        if (isCurrentATS || isPendingATS) {
+            advisedToShiftCount++;
+        }
+    });
 
     const navigateToReport = (filter: string) => {
         setPendingReportFilter(filter);

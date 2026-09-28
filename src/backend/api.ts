@@ -418,9 +418,16 @@ export const backendAPI = {
             : { id: 'global', probationThreshold: 2.0, atsThreshold: 1.0 };
 
         const rawProgramCourses = (pcRes.data || []) as any[];
+        // ... (inside fetchInitialSystemData)
         const mappedProgramCourses: PROGRAM_COURSE[] = rawProgramCourses.map(pc => ({
             ...pc,
             yearLevel: pc.yrLevel !== undefined ? Number(pc.yrLevel) : Number(pc.yearLevel)
+        }));
+
+        // ADD THIS: Intercept and normalize the hyphenated Supabase string back to frontend-friendly spacing
+        const mappedStandings: TERM_STANDING[] = (standRes.data as TERM_STANDING[]).map(ts => ({
+            ...ts,
+            termAcademicStatus: (ts.termAcademicStatus as string) === 'Advised-to-Shift' ? 'Advised to Shift' : ts.termAcademicStatus
         }));
 
         return {
@@ -431,7 +438,7 @@ export const backendAPI = {
                 programCourses: mappedProgramCourses,
                 records: recRes.data as ACADEMIC_RECORD[],
                 remarks: remRes.data as ADVISING_REMARK[],
-                standings: standRes.data as TERM_STANDING[],
+                standings: mappedStandings, // <- UPDATE THIS LINE to use the mapped variable
                 terms: termRes.data as ACADEMIC_TERM[],
                 coursePrerequisites: preRes.data as COURSE_PREREQUISITE[],
                 retentionPolicies: (polRes.data || []) as RETENTION_POLICY[],
@@ -708,9 +715,10 @@ export const backendAPI = {
         return { data: [], newStanding: null, updatedStudentYearLevel: undefined, error: "All curriculum subjects for this term are already populated on the screen." };
     },
 
+    //program: DEGREE_PROGRAM,
     async upsertGrade(
         courseCode: string, val: string, recordID: string | undefined, student: EnrichedStudent, activeTerm: string,
-        currentRecords: ACADEMIC_RECORD[], programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
+        currentRecords: ACADEMIC_RECORD[], programCourses: PROGRAM_COURSE[], courses: COURSE[],
         currentStandings: TERM_STANDING[], userID: string, terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[]
     ) {
         let finalGrade: number | null = null; let gradeRemarks: string | null = null; let isFailed = false;
@@ -790,9 +798,10 @@ export const backendAPI = {
         return { recordsData: updatedRecordsArray, standingsData: updatedStandingsArray, updatedYearLevel: syncedYearLevel, error: null };
     },
 
+    // program: DEGREE_PROGRAM,
     async deleteGradeRow(
         recordID: string, currentRecords: ACADEMIC_RECORD[], student: EnrichedStudent, activeTerm: string,
-        programCourses: PROGRAM_COURSE[], courses: COURSE[], program: DEGREE_PROGRAM,
+        programCourses: PROGRAM_COURSE[], courses: COURSE[],
         currentStandings: TERM_STANDING[], terms: ACADEMIC_TERM[], retentionPolicies: RETENTION_POLICY[]
     ) {
         const { error } = await supabase.from('ACADEMIC_RECORD').delete().eq('recordID', recordID);

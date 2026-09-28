@@ -240,12 +240,10 @@ export default function Evaluator() {
 
     const handleAddExtraCourse = async (courseCode: string) => {
         if (!activeUser || !selectedStudent) return;
-        const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
-        if (!activeProgram) return;
 
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             courseCode, "", undefined, selectedStudent, localTerm, records,
-            programCourses, courses, activeProgram, standings, activeUser.userID, terms, retentionPolicies
+            programCourses, courses, standings, activeUser.userID, terms, retentionPolicies
         );
 
         if (error) return alert(error);
@@ -261,15 +259,12 @@ export default function Evaluator() {
         setCourseSearch("");
     };
 
-    // FIXED: Enforced Promise<boolean> execution to synchronously revert input UI state if backend save fails (Phase 5)
     const handleGradeChange = async (code: string, val: string, recordID?: string): Promise<boolean> => {
         if (!activeUser || !selectedStudent) return false;
-        const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
-        if (!activeProgram) return false;
 
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             code, val, recordID, selectedStudent, localTerm, records,
-            programCourses, courses, activeProgram, standings, activeUser.userID, terms, retentionPolicies
+            programCourses, courses, standings, activeUser.userID, terms, retentionPolicies
         );
 
         if (error) {
@@ -289,12 +284,10 @@ export default function Evaluator() {
 
     const handleDeleteRow = async (code: string, recordID?: string) => {
         if (!activeUser || !selectedStudent || !recordID) return;
-        const activeProgram = programs.find(p => p.programCode === selectedStudent.programCode);
-        if (!activeProgram) return;
 
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.deleteGradeRow(
             recordID, records, selectedStudent, localTerm,
-            programCourses, courses, activeProgram, standings, terms, retentionPolicies
+            programCourses, courses, standings, terms, retentionPolicies
         );
 
         if (error) return alert(error);
