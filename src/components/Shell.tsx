@@ -37,14 +37,16 @@ export function Header() {
         setBellOpen(false);
     };
 
-    const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser);
+    // PHASE 3 FIX: Only process manual reviews for Dean's Office Staff to save memory
+    const manualReviewList = activeUser?.userType === 'Deans_Office_Staff'
+        ? backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser)
+        : [];
     const flaggedCount = manualReviewList.length;
     const hasUnread = flaggedCount > 0;
 
     return (
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-5 shadow-sm print:hidden transition-colors">
             <div className="flex items-center gap-3">
-                {/* FIXED: Hamburger menu toggle for mobile views (Concern 1) */}
                 <button
                     onClick={() => window.dispatchEvent(new CustomEvent('toggle-sidebar'))}
                     className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
@@ -72,47 +74,50 @@ export function Header() {
                     <div className="text-[10px] uppercase tracking-wider text-slate-400">{termDetails?.termSem}, A.Y. {termDetails?.termSY}</div>
                 </div>
 
-                <div className="relative">
-                    <button
-                        onClick={() => { setBellOpen(!bellOpen); setProfileOpen(false); }}
-                        className="relative rounded-md p-2 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                        title="System Alerts"
-                    >
-                        <I.Bell className="h-5 w-5" />
-                        {hasUnread && (
-                            <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-coral opacity-75" />
-                                <span className="relative inline-flex h-2 w-2 rounded-full bg-coral" />
-                            </span>
-                        )}
-                    </button>
+                {/* PHASE 3 FIX: System Alerts bell strictly hidden from unauthorized Faculty users */}
+                {activeUser?.userType === 'Deans_Office_Staff' && (
+                    <div className="relative">
+                        <button
+                            onClick={() => { setBellOpen(!bellOpen); setProfileOpen(false); }}
+                            className="relative rounded-md p-2 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                            title="System Alerts"
+                        >
+                            <I.Bell className="h-5 w-5" />
+                            {hasUnread && (
+                                <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-coral opacity-75" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-coral" />
+                                </span>
+                            )}
+                        </button>
 
-                    {bellOpen && (
-                        <>
-                            <div className="fixed inset-0 z-40" onClick={() => setBellOpen(false)} />
-                            <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 shadow-xl shadow-slate-300/40 dark:shadow-black/50">
-                                <div className="border-b border-slate-100 dark:border-slate-700 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-500">System Alerts</div>
-                                <div className="flex flex-col">
-                                    {hasUnread ? (
-                                        <button
-                                            onClick={handleNotificationClick}
-                                            className="flex flex-col items-start px-4 py-3 text-left transition hover:bg-coral-tint/30 dark:hover:bg-coral-900/30"
-                                        >
-                                            <span className="text-sm font-bold text-coral">Action Required: Manual Review</span>
-                                            <span className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
-                                                <span className="font-bold text-slate-800 dark:text-slate-100">{flaggedCount}</span> students are flagged for academic review in the active term. Click to process.
-                                            </span>
-                                        </button>
-                                    ) : (
-                                        <div className="px-4 py-5 text-center text-sm text-slate-500">
-                                            No new flags or reviews pending at this time.
-                                        </div>
-                                    )}
+                        {bellOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setBellOpen(false)} />
+                                <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 shadow-xl shadow-slate-300/40 dark:shadow-black/50">
+                                    <div className="border-b border-slate-100 dark:border-slate-700 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-500">System Alerts</div>
+                                    <div className="flex flex-col">
+                                        {hasUnread ? (
+                                            <button
+                                                onClick={handleNotificationClick}
+                                                className="flex flex-col items-start px-4 py-3 text-left transition hover:bg-coral-tint/30 dark:hover:bg-coral-900/30"
+                                            >
+                                                <span className="text-sm font-bold text-coral">Action Required: Manual Review</span>
+                                                <span className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+                                                    <span className="font-bold text-slate-800 dark:text-slate-100">{flaggedCount}</span> students are flagged for academic review in the active term. Click to process.
+                                                </span>
+                                            </button>
+                                        ) : (
+                                            <div className="px-4 py-5 text-center text-sm text-slate-500">
+                                                No new flags or reviews pending at this time.
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        </>
-                    )}
-                </div>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 <div className="relative">
                     <button onClick={() => { setProfileOpen(!profileOpen); setBellOpen(false); }} className={`flex items-center gap-2 rounded-full py-1 pl-1 pr-3 transition ${profileOpen ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
@@ -138,10 +143,9 @@ export function Header() {
 }
 
 export function Sidebar() {
-    const { students, activeView, setActiveView } = useStore();
-
-    // FIXED: Sidebar state management and event listeners for the mobile drawer (Concern 1.1)
+    const { students, activeView, setActiveView, activeUser } = useStore();
     const [isOpen, setIsOpen] = useState(false);
+
     useEffect(() => {
         const handleToggle = () => setIsOpen(prev => !prev);
         window.addEventListener('toggle-sidebar', handleToggle);
@@ -153,7 +157,6 @@ export function Sidebar() {
 
     return (
         <>
-            {/* FIXED: Dark, dismissible background overlay strictly for mobile views */}
             {isOpen && (
                 <div
                     className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden transition-opacity"
@@ -161,19 +164,19 @@ export function Sidebar() {
                 />
             )}
 
-            {/* FIXED: Dynamic Tailwind classes translate the aside out of view on mobile, while remaining permanently locked relative on desktop */}
             <aside
                 className={`fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col justify-between border-r border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 print:hidden transition-transform duration-300 lg:relative lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
                 style={{ width: 232 }}
             >
                 <div>
                     <nav className="flex flex-col gap-1 p-3">
-                        {navItems.map((n) => {
+                        {/* PHASE 3 FIX: Inline filter to strictly hide the Dashboard tab from unauthorized Faculty */}
+                        {navItems.filter(n => n.id !== "dashboard" || activeUser?.userType === 'Deans_Office_Staff').map((n) => {
                             const isActive = activeView === n.id;
                             return (
                                 <button
                                     key={n.id}
-                                    onClick={() => { setActiveView(n.id); setIsOpen(false); }} // Auto-collapses sidebar on link click
+                                    onClick={() => { setActiveView(n.id); setIsOpen(false); }}
                                     className={`group flex items-center gap-3 rounded-lg border-l-[3px] px-3 py-2.5 text-sm font-medium transition ${
                                         isActive ? "border-blue-700 bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm" : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"
                                     }`}

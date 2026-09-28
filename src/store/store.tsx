@@ -36,6 +36,7 @@ interface CompassState {
     pendingSettingsTab: "profile" | "system" | "audit" | null;
     highlightReviewTable: boolean;
     pendingLocalTerm: string | null;
+
     setIsAuthenticated: Dispatch<SetStateAction<boolean>>;
     setActiveUser: Dispatch<SetStateAction<COMPASS_USER | null>>;
     setStudents: Dispatch<SetStateAction<EnrichedStudent[]>>;
@@ -58,6 +59,7 @@ interface CompassState {
     setPendingSettingsTab: Dispatch<SetStateAction<"profile" | "system" | "audit" | null>>;
     setHighlightReviewTable: Dispatch<SetStateAction<boolean>>;
     setPendingLocalTerm: Dispatch<SetStateAction<string | null>>;
+
     pushAudit: (action: string, target: string) => void;
     can: (permission: string) => boolean;
 }
@@ -66,9 +68,11 @@ const CompassContext = createContext<CompassState | undefined>(undefined);
 
 export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
+
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
         return localStorage.getItem('compass_auth') === 'true';
     });
+
     const [activeUser, setActiveUser] = useState<COMPASS_USER | null>(() => {
         const stored = localStorage.getItem('compass_user');
         if (stored) {
@@ -81,6 +85,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
         }
         return null;
     });
+
     const [activeTerm, setActiveTerm] = useState<string>("");
     const [students, setStudents] = useState<EnrichedStudent[]>([]);
     const [programs, setPrograms] = useState<DEGREE_PROGRAM[]>([]);
@@ -94,7 +99,23 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [auditLogs, setAuditLogs] = useState<AUDIT_LOG[]>([]);
     const [retentionPolicies, setRetentionPolicies] = useState<RETENTION_POLICY[]>([]);
     const [systemSettings, setSystemSettings] = useState<SYSTEM_SETTINGS | null>(null);
-    const [activeView, setActiveView] = useState<View>("dashboard");
+
+    // PHASE 2 FIX: Lazy evaluation to dynamically lock default route to Evaluator for Faculty to prevent hard-reload bypasses
+    const [activeView, setActiveView] = useState<View>(() => {
+        const stored = localStorage.getItem('compass_user');
+        if (stored) {
+            try {
+                const parsedUser = JSON.parse(stored);
+                if (parsedUser && parsedUser.userType === 'Faculty') {
+                    return "evaluator";
+                }
+            } catch (e) {
+                // Ignore parsing errors, default to dashboard
+            }
+        }
+        return "dashboard";
+    });
+
     const [pendingReportFilter, setPendingReportFilter] = useState<string>("All Students");
     const [focusedStudentID, setFocusedStudentID] = useState<string | null>(null);
     const [pendingEvaluatorAction, setPendingEvaluatorAction] = useState<"new" | null>(null);
@@ -114,6 +135,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
+
         const loadDatabase = async () => {
             setIsInitializing(true);
             const { data, error } = await backendAPI.fetchInitialSystemData();
@@ -130,6 +152,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                 setAuditLogs(data.auditLogs || []);
                 setRetentionPolicies(data.retentionPolicies || []);
                 setSystemSettings(data.systemSettings);
+
                 const currentTerm = data.terms.find(t => t.isCurrent);
                 if (currentTerm) setActiveTerm(currentTerm.termID);
                 else if (data.terms.length > 0) setActiveTerm(data.terms[0].termID);
@@ -138,11 +161,13 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             }
             setIsInitializing(false);
         };
+
         if (isAuthenticated) {
             void loadDatabase();
         } else {
             timer = setTimeout(() => setIsInitializing(false), 0);
         }
+
         return () => {
             if (timer) clearTimeout(timer);
         };
@@ -181,6 +206,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             activeView, pendingReportFilter, focusedStudentID, pendingEvaluatorAction,
             isDarkMode, pendingSettingsTab, highlightReviewTable, retentionPolicies, systemSettings,
             pendingLocalTerm,
+
             setRetentionPolicies, setSystemSettings, setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
             setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setCoursePrerequisites, setActiveTerm,
             setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction,

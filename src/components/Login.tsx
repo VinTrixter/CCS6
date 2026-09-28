@@ -2,14 +2,12 @@
 import React, { useState } from "react";
 import { supabase } from '../backend/supabaseClient';
 import { useStore } from '../store/store';
-
 // @ts-ignore: Bypassing missing types package for local encryption
 import bcrypt from 'bcryptjs';
 import * as I from "./icons";
 
 export default function Login() {
-    const { setIsAuthenticated, setActiveUser, pushAudit } = useStore();
-
+    const { setIsAuthenticated, setActiveUser, pushAudit, setActiveView } = useStore();
     const [loginInput, setLoginInput] = useState("");
     const [passwordInput, setPasswordInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -23,13 +21,6 @@ export default function Login() {
         const cleanInput = loginInput.trim();
 
         // 1. Fetch user by checking strictly the userName column
-        /* PREVIOUS LOGIC: Supported both userID and userName
-        const { data: userData, error: userError } = await supabase
-            .from('COMPASS_USER')
-            .select('*')
-            .or(`userID.eq.${cleanInput},userName.eq.${cleanInput}`)
-            .single();
-        */
         const { data: userData, error: userError } = await supabase
             .from('COMPASS_USER')
             .select('*')
@@ -54,6 +45,9 @@ export default function Login() {
         // 3. Establish Local Session
         setActiveUser(userData);
         setIsAuthenticated(true);
+
+        // PHASE 2 FIX: Enforce role-based post-login routing
+        setActiveView(userData.userType === 'Deans_Office_Staff' ? 'dashboard' : 'evaluator');
         pushAudit("USER_LOGIN", userData.userID);
     };
 
@@ -68,6 +62,7 @@ export default function Login() {
                     <h1 className="font-display text-2xl font-bold tracking-tight text-white">COMPASS</h1>
                     <p className="mt-1 text-[11px] font-medium uppercase tracking-widest text-slate-400">Database Authentication</p>
                 </div>
+
                 <div className="p-8">
                     <form onSubmit={handleLogin} className="flex flex-col gap-5">
                         {errorMessage && <div className="p-3 text-xs font-bold text-red-600 bg-red-50 rounded-md border border-red-200">{errorMessage}</div>}
@@ -86,7 +81,7 @@ export default function Login() {
                                 <div className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-slate-400">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                                 </div>
-                                <input required type="password" placeholder="••••••••••••" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-700 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
+                                <input required type="password" placeholder=" " value={passwordInput} onChange={e => setPasswordInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-700 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
                             </div>
                         </div>
 

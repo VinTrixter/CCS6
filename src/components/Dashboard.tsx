@@ -88,7 +88,7 @@ export default function Dashboard() {
                             <tr>
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
                                 {/* PHASE 4 FIX: Render Cumulative CQPA as primary metric */}
-                                <th className="px-5 py-4 font-semibold">Cumulative CQPA</th>
+                                <th className="px-5 py-4 font-semibold">CQPA</th>
                                 <th className="px-5 py-4 font-semibold">Current Standing</th>
                                 <th className="px-5 py-4 font-semibold">Issue / Concern</th>
                                 <th className="px-5 py-4 text-right font-semibold">Action</th>

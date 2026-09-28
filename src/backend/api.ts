@@ -229,7 +229,8 @@ export const backendAPI = {
                     const desc = ts.isConsecutiveOP ? "Consecutive Probation" : "Academic Deficit (CQPA / 2-Strike)";
                     reviewItems.push({ ...ts, issueDescription: desc, targetTermID: activeTerm });
                 }
-            } else if (ts.termAcademicStatus === 'Unencoded' && activeUser?.userType !== 'Deans_Office_Staff') {
+                // PHASE 1 FIX: Unencoded records correctly trigger exclusively for the Dean's Office Staff
+            } else if (ts.termAcademicStatus === 'Unencoded' && activeUser?.userType === 'Deans_Office_Staff') {
                 reviewItems.push({ ...ts, issueDescription: "Missing Final Grades", targetTermID: activeTerm });
             }
         });
