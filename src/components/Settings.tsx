@@ -9,16 +9,18 @@ type SettingsTab = "profile" | "system" | "audit";
 
 export default function Settings() {
     const { activeUser, setActiveUser, activeTerm, setActiveTerm, auditLogs, can, pushAudit, pendingSettingsTab, setPendingSettingsTab, terms, setTerms, programs, retentionPolicies, setRetentionPolicies, systemSettings, setSystemSettings } = useStore();
+
     const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
     const [auditFilters, setAuditFilters] = useState({ start: "", end: "", user: "", action: "", target: "" });
-
     const [isSaving, setIsSaving] = useState(false);
+
     const [startYear, setStartYear] = useState<string>("");
     const endYear = startYear.length === 4 ? (parseInt(startYear) + 1).toString() : "";
     const [sem, setSem] = useState<string>("1st Semester");
+
+    // PHASE 3 FIX: Removed the ats threshold from the UI state wrapper
     const [sysBounds, setSysBounds] = useState({
-        op: systemSettings?.probationThreshold || 2.0,
-        ats: systemSettings?.atsThreshold || 1.0
+        op: systemSettings?.probationThreshold || 2.0
     });
 
     const isNewCohort = startYear.length === 4
@@ -27,7 +29,6 @@ export default function Settings() {
 
     const [showCustomPolicy, setShowCustomPolicy] = useState(false);
     const [customPolicies, setCustomPolicies] = useState<Record<string, { major: string, minor: string }>>({});
-
     const [showEditPolicy, setShowEditPolicy] = useState(false);
     const [editPolicies, setEditPolicies] = useState<Record<string, { policyID?: string, major: string, minor: string }>>({});
 
@@ -47,7 +48,7 @@ export default function Settings() {
     useEffect(() => {
         if (systemSettings) {
             const timer = setTimeout(() => {
-                setSysBounds({ op: systemSettings.probationThreshold, ats: systemSettings.atsThreshold });
+                setSysBounds({ op: systemSettings.probationThreshold });
             }, 0);
             return () => clearTimeout(timer);
         }
@@ -64,6 +65,7 @@ export default function Settings() {
 
             const initPol: Record<string, { major: string, minor: string }> = {};
             const relevantPrograms = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= syNum);
+
             relevantPrograms.forEach(prog => {
                 if (maxPrior !== null) {
                     const existing = retentionPolicies.find(p => p.effectiveYear === maxPrior && p.programCode === prog.programCode);
@@ -82,6 +84,7 @@ export default function Settings() {
     const handleProfileSave = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!activeUser) return;
+
         const firstName = activeUser.userFirstName.trim();
         const lastName = activeUser.userLastName.trim();
 
@@ -113,6 +116,7 @@ export default function Settings() {
     const handleSystemSave = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         setIsSaving(true);
+
         const { error } = await backendAPI.updateActiveTerm(activeTerm);
         if (error) {
             alert("Database Error: Could not update active term. " + error);
@@ -128,8 +132,10 @@ export default function Settings() {
     const handleBoundsSave = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         setIsSaving(true);
-        const newSettings: SYSTEM_SETTINGS = { id: 'global', probationThreshold: sysBounds.op, atsThreshold: sysBounds.ats };
+
+        const newSettings: SYSTEM_SETTINGS = { id: 'global', probationThreshold: sysBounds.op };
         const { error } = await backendAPI.updateSystemSettings(newSettings);
+
         if (error) {
             alert("Database Error: Could not update boundaries. " + error);
         } else {
@@ -143,6 +149,7 @@ export default function Settings() {
     const handleAddTerm = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (startYear.length !== 4) return alert("Please enter a valid 4-digit start year.");
+
         const semCode = sem === "1st Semester" ? "1" : sem === "2nd Semester" ? "2" : "3";
         const syStr = `${startYear}-${endYear}`;
         const newID = `T${startYear}-${semCode}`;
@@ -162,6 +169,7 @@ export default function Settings() {
         }
 
         const relevantProgsToSave = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= parseInt(startYear));
+
         const { error, newPolicies } = await backendAPI.createTerm(newTerm, parseInt(startYear), isNewCohort, payloadPolicies, retentionPolicies, relevantProgsToSave);
 
         if (error) {
@@ -184,6 +192,7 @@ export default function Settings() {
         if (!showEditPolicy) {
             const initPol: Record<string, { policyID?: string, major: string, minor: string }> = {};
             const relevantPrograms = programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= activeTermYear);
+
             relevantPrograms.forEach(prog => {
                 const existing = retentionPolicies.find(p => p.effectiveYear === activeTermYear && p.programCode === prog.programCode);
                 initPol[prog.programCode] = {
@@ -199,13 +208,16 @@ export default function Settings() {
 
     const handleUpdatePolicies = async (e: React.SyntheticEvent) => {
         e.preventDefault();
+
         const policiesToUpdate: RETENTION_POLICY[] = [];
         for (const progCode of Object.keys(editPolicies)) {
             const majorNum = parseFloat(editPolicies[progCode].major);
             const minorNum = parseFloat(editPolicies[progCode].minor);
+
             if (isNaN(majorNum) || majorNum < 0.0 || majorNum > 4.0 || isNaN(minorNum) || minorNum < 0.0 || minorNum > 4.0) {
                 return alert(`Invalid grade thresholds for ${progCode}. Must be a number between 0.0 and 4.0.`);
             }
+
             policiesToUpdate.push({
                 policyID: editPolicies[progCode].policyID || `RP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
                 programCode: progCode,
@@ -234,6 +246,7 @@ export default function Settings() {
         try {
             if (!log.timestamp) return false;
             const logDate = new Date(log.timestamp).toISOString().split('T')[0];
+
             return !(
                 (auditFilters.start && logDate < auditFilters.start) ||
                 (auditFilters.end && logDate > auditFilters.end) ||
@@ -252,6 +265,7 @@ export default function Settings() {
                 <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">System Settings</h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">Manage your profile, system variables, and view security logs.</p>
             </div>
+
             <div className="flex flex-col lg:flex-row overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-colors">
                 <div className="w-full lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4">
                     <nav className="flex flex-row lg:flex-col gap-2 overflow-x-auto">
@@ -260,6 +274,7 @@ export default function Settings() {
                         {can('manage_records') && <button onClick={() => setActiveTab("audit")} className={`flex shrink-0 whitespace-nowrap items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${activeTab === "audit" ? "bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-600" : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800"}`}><I.ShieldAlert className="h-4 w-4" /> Audit Ledger</button>}
                     </nav>
                 </div>
+
                 <div className="flex-1 p-5 lg:p-8 overflow-y-auto">
                     {activeTab === "profile" && (
                         <div className="max-w-2xl">
@@ -274,6 +289,7 @@ export default function Settings() {
                             </form>
                         </div>
                     )}
+
                     {activeTab === "system" && can('manage_records') && (
                         <div className="max-w-5xl">
                             <h2 className="mb-6 text-lg font-bold text-slate-800 dark:text-slate-100">Global Environment Variables</h2>
@@ -294,15 +310,18 @@ export default function Settings() {
                                             <button type="submit" disabled={isSaving} className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-50">Set Active Term</button>
                                         </div>
                                     </form>
+
                                     {showEditPolicy && activeTermObj && (
                                         <form onSubmit={handleUpdatePolicies} className="flex flex-col gap-4 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-900/10 p-5 shadow-sm transition-colors">
                                             <div className="mb-3 flex items-center justify-between">
                                                 <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Edit Custom Thresholds for AY {activeTermObj.termSY}</h4>
                                                 <button type="button" onClick={() => setShowEditPolicy(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><I.X className="h-4 w-4" /></button>
                                             </div>
+
                                             <div className="grid grid-cols-3 gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">
                                                 <div>Program</div><div className="text-center">Major Grade</div><div className="text-center">Minor Grade</div>
                                             </div>
+
                                             {programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= activeTermYear).map(prog => (
                                                 <div key={prog.programCode} className="grid grid-cols-3 gap-2 items-center border-b border-slate-100 dark:border-slate-700/50 py-2 last:border-0">
                                                     <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{prog.programCode}</div>
@@ -310,14 +329,17 @@ export default function Settings() {
                                                     <input type="number" step="0.1" required value={editPolicies[prog.programCode]?.minor || ""} onChange={e => setEditPolicies({...editPolicies, [prog.programCode]: { ...editPolicies[prog.programCode], minor: e.target.value }})} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-1 text-center text-sm outline-none focus:border-blue-700 dark:text-slate-200" />
                                                 </div>
                                             ))}
+
                                             <div className="mt-2 text-right border-t border-slate-200 dark:border-slate-700 pt-4">
                                                 <button type="submit" disabled={isSaving} className="rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50">Save Policy Changes</button>
                                             </div>
                                         </form>
                                     )}
+
                                     <form onSubmit={handleAddTerm} className="flex flex-col rounded-xl border border-blue-100 dark:border-blue-900 bg-white dark:bg-slate-800 p-5 shadow-sm transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-blue-800 dark:text-blue-400">Create New Academic Term</label>
                                         <p className="mb-6 text-xs text-slate-500 dark:text-slate-400">Initialize a new academic semester for the system. This action is permanent.</p>
+
                                         <div className="grid grid-cols-2 gap-4 mb-4">
                                             <div>
                                                 <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Academic Year</label>
@@ -334,6 +356,7 @@ export default function Settings() {
                                                 </select>
                                             </div>
                                         </div>
+
                                         {isNewCohort && (
                                             <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-900/10 p-5 transition-colors">
                                                 <div className="flex items-start gap-3">
@@ -349,9 +372,11 @@ export default function Settings() {
                                                                     <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Custom Thresholds for {startYear}</h4>
                                                                     <button type="button" onClick={() => setShowCustomPolicy(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><I.X className="h-4 w-4" /></button>
                                                                 </div>
+
                                                                 <div className="grid grid-cols-3 gap-2 border-b border-slate-100 dark:border-slate-700 pb-2 text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">
                                                                     <div>Program</div><div className="text-center">Major Grade</div><div className="text-center">Minor Grade</div>
                                                                 </div>
+
                                                                 {programs.filter(prog => !(prog as any).isArchived && parseInt(prog.curriculumYear.split('-')[0]) <= parseInt(startYear)).map(prog => (
                                                                     <div key={prog.programCode} className="grid grid-cols-3 gap-2 items-center border-b border-slate-50 dark:border-slate-700/50 py-2 last:border-0">
                                                                         <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{prog.programCode}</div>
@@ -365,25 +390,23 @@ export default function Settings() {
                                                 </div>
                                             </div>
                                         )}
+
                                         <div className="mt-2 text-right border-t border-slate-100 dark:border-slate-700 pt-4">
                                             <button type="submit" disabled={isSaving || startYear.length !== 4} className="rounded-lg bg-blue-700 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50">Register Term & Cohort</button>
                                         </div>
                                     </form>
                                 </div>
+
                                 <div className="flex flex-col gap-6">
                                     <form onSubmit={handleBoundsSave} className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-5 transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-slate-800 dark:text-slate-200">Academic Standing Boundaries (CQPA)</label>
-                                        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Set the cumulative threshold boundaries for academic standing evaluations.</p>
-                                        <div className="flex gap-4">
-                                            <div className="flex-1">
-                                                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">On Probation (&lt;)</label>
-                                                <input type="number" step="0.1" required value={sysBounds.op} onChange={e => setSysBounds({...sysBounds, op: Number(e.target.value)})} disabled={isSaving} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2.5 text-sm font-semibold outline-none focus:border-blue-700 disabled:opacity-50 transition-colors" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Advised to Shift (&lt;)</label>
-                                                <input type="number" step="0.1" required value={sysBounds.ats} onChange={e => setSysBounds({...sysBounds, ats: Number(e.target.value)})} disabled={isSaving} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2.5 text-sm font-semibold outline-none focus:border-blue-700 disabled:opacity-50 transition-colors" />
-                                            </div>
+                                        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Set the cumulative threshold boundary for academic standing evaluations.</p>
+
+                                        <div className="w-full sm:w-1/2">
+                                            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">On Probation (&lt;)</label>
+                                            <input type="number" step="0.1" required value={sysBounds.op} onChange={e => setSysBounds({...sysBounds, op: Number(e.target.value)})} disabled={isSaving} className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2.5 text-sm font-semibold outline-none focus:border-blue-700 disabled:opacity-50 transition-colors" />
                                         </div>
+
                                         <div className="mt-2 text-right">
                                             <button type="submit" disabled={isSaving} className="rounded-lg bg-slate-800 dark:bg-blue-600 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-50">Save Boundaries</button>
                                         </div>
@@ -392,15 +415,16 @@ export default function Settings() {
                             </div>
                         </div>
                     )}
+
                     {activeTab === "audit" && can('manage_records') && (
                         <div className="flex h-full flex-col">
                             <div className="mb-4 flex flex-col gap-2 shrink-0">
                                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Security Audit Ledger</h2>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Immutable read-only log of session operations.</p>
                             </div>
+
                             <div className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 transition-colors shrink-0">
                                 <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Filter Ledger</div>
-                                {/* FIXED: Re-structured the audit filters to include visual labels and native math-bounds for Start and End dates (Phase 5) */}
                                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5 items-end">
                                     <div className="flex flex-col gap-1">
                                         <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Start Date</label>
@@ -427,6 +451,7 @@ export default function Settings() {
                                     <button onClick={() => setAuditFilters({ start: "", end: "", user: "", action: "", target: "" })} className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-700 dark:hover:text-blue-400">Clear Filters</button>
                                 </div>
                             </div>
+
                             <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors flex flex-col overflow-hidden">
                                 <div className="max-h-[400px] overflow-y-auto">
                                     <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">

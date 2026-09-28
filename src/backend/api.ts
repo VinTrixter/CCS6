@@ -35,7 +35,7 @@ const cascadeStandings = (
     programCourses: PROGRAM_COURSE[],
     courses: COURSE[],
     retentionPolicies: RETENTION_POLICY[],
-    systemSettings: { probationThreshold: number, atsThreshold: number },
+    systemSettings: { probationThreshold: number },
     currentStandings: TERM_STANDING[],
     terms: ACADEMIC_TERM[],
     modifiedTermID: string,
@@ -185,9 +185,8 @@ const cascadeStandings = (
         } else if (majorStrikeTriggered) {
             status = "Advised to Shift";
         } else {
-            if (semCQPA < systemSettings.atsThreshold) {
-                status = "Advised to Shift";
-            } else if (semCQPA < systemSettings.probationThreshold) {
+            // PHASE 1 FIX: Removed numerical ATS Threshold block entirely. ATS is now strictly earned via consecutive OP or Major Strikes.
+            if (semCQPA < systemSettings.probationThreshold) {
                 status = "On-Probation";
                 if (isConsecutiveOP) {
                     status = "Advised to Shift";
@@ -229,7 +228,6 @@ export const backendAPI = {
                     const desc = ts.isConsecutiveOP ? "Consecutive Probation" : "Academic Deficit (CQPA / 2-Strike)";
                     reviewItems.push({ ...ts, issueDescription: desc, targetTermID: activeTerm });
                 }
-                // PHASE 1 FIX: Unencoded records correctly trigger exclusively for the Dean's Office Staff
             } else if (ts.termAcademicStatus === 'Unencoded' && activeUser?.userType === 'Deans_Office_Staff') {
                 reviewItems.push({ ...ts, issueDescription: "Missing Final Grades", targetTermID: activeTerm });
             }
@@ -397,7 +395,7 @@ export const backendAPI = {
 
         const sysData = sysRes.data && sysRes.data.length > 0
             ? sysRes.data[0]
-            : { id: 'global', probationThreshold: 2.0, atsThreshold: 1.0 };
+            : { id: 'global', probationThreshold: 2.0 };
 
         const rawProgramCourses = (pcRes.data || []) as any[];
         const mappedProgramCourses: PROGRAM_COURSE[] = rawProgramCourses.map(pc => ({
@@ -774,7 +772,7 @@ export const backendAPI = {
         }
 
         const { data: sysRes } = await supabase.from('SYSTEM_SETTINGS').select('*').eq('id', 'global').single();
-        const systemSettings = sysRes || { probationThreshold: 2.0, atsThreshold: 1.0 };
+        const systemSettings = sysRes || { probationThreshold: 2.0 };
 
         const { newStandings, updatedStandingsArray } = cascadeStandings(student, updatedRecordsArray, programCourses, courses, retentionPolicies, systemSettings, currentStandings, terms, activeTerm, skipYearLevelAutoCalc);
 
@@ -807,7 +805,7 @@ export const backendAPI = {
 
         const updatedRecordsArray = currentRecords.filter(r => r.recordID !== recordID);
         const { data: sysRes } = await supabase.from('SYSTEM_SETTINGS').select('*').eq('id', 'global').single();
-        const systemSettings = sysRes || { probationThreshold: 2.0, atsThreshold: 1.0 };
+        const systemSettings = sysRes || { probationThreshold: 2.0 };
 
         const { newStandings, updatedStandingsArray } = cascadeStandings(student, updatedRecordsArray, programCourses, courses, retentionPolicies, systemSettings, currentStandings, terms, activeTerm, false);
 

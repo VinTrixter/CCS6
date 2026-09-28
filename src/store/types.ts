@@ -1,5 +1,4 @@
 // src/store/types.ts
-
 export interface COMPASS_USER {
     userID: string;
     userName: string;
@@ -39,7 +38,7 @@ export interface DEGREE_PROGRAM {
     programTitle: string;
     curriculumYear: string;
     passingGradeThreshold?: number;
-    isArchived?: boolean; // FIXED: Formalized to strictly type the soft-deletion model
+    isArchived?: boolean;
 }
 
 export interface COURSE {
@@ -114,7 +113,6 @@ export interface RETENTION_POLICY {
 export interface SYSTEM_SETTINGS {
     id: string;
     probationThreshold: number;
-    atsThreshold: number;
 }
 
 export type MANUAL_REVIEW_ITEM = TERM_STANDING & {
