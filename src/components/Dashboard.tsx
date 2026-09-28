@@ -6,9 +6,7 @@ import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
 
 export default function Dashboard() {
-    // FIXED: Safely added programCourses to the useStore destruction array (Phase 3 dependency)
     const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can, setPendingLocalTerm, programCourses } = useStore();
-
     const [showShiftingModal, setShowShiftingModal] = useState(false);
 
     useEffect(() => {
@@ -18,15 +16,12 @@ export default function Dashboard() {
         }
     }, [highlightReviewTable, setHighlightReviewTable]);
 
-    // ...
     const currentTermStandings = standings.filter(ts => ts.termID === activeTerm);
     const activeStudentsCount = students.filter(s => s.accountStatus === 'Active').length;
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
 
-    // The manualReviewList generation must happen BEFORE we calculate the new ATS metric
     const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser, records, terms, students, programCourses);
 
-    // FIXED: Expands ATS metric to count both active-term ATS and pending unresolved historical ATS
     let advisedToShiftCount = 0;
     students.forEach(student => {
         if (student.accountStatus !== 'Active') return;

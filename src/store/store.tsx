@@ -28,7 +28,6 @@ interface CompassState {
     coursePrerequisites: COURSE_PREREQUISITE[];
     retentionPolicies: RETENTION_POLICY[];
     systemSettings: SYSTEM_SETTINGS | null;
-
     activeView: View;
     pendingReportFilter: string;
     focusedStudentID: string | null;
@@ -36,8 +35,7 @@ interface CompassState {
     isDarkMode: boolean;
     pendingSettingsTab: "profile" | "system" | "audit" | null;
     highlightReviewTable: boolean;
-    pendingLocalTerm: string | null; // FIXED: State bridge added for Term Warping
-
+    pendingLocalTerm: string | null;
     setIsAuthenticated: Dispatch<SetStateAction<boolean>>;
     setActiveUser: Dispatch<SetStateAction<COMPASS_USER | null>>;
     setStudents: Dispatch<SetStateAction<EnrichedStudent[]>>;
@@ -59,7 +57,7 @@ interface CompassState {
     setIsDarkMode: Dispatch<SetStateAction<boolean>>;
     setPendingSettingsTab: Dispatch<SetStateAction<"profile" | "system" | "audit" | null>>;
     setHighlightReviewTable: Dispatch<SetStateAction<boolean>>;
-    setPendingLocalTerm: Dispatch<SetStateAction<string | null>>; // FIXED: Setter for Term Warping bridge
+    setPendingLocalTerm: Dispatch<SetStateAction<string | null>>;
     pushAudit: (action: string, target: string) => void;
     can: (permission: string) => boolean;
 }
@@ -68,18 +66,22 @@ const CompassContext = createContext<CompassState | undefined>(undefined);
 
 export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
-
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
         return localStorage.getItem('compass_auth') === 'true';
     });
-
     const [activeUser, setActiveUser] = useState<COMPASS_USER | null>(() => {
         const stored = localStorage.getItem('compass_user');
-        return stored ? JSON.parse(stored) : null;
+        if (stored) {
+            try {
+                return JSON.parse(stored);
+            } catch (e) {
+                localStorage.removeItem('compass_user');
+                return null;
+            }
+        }
+        return null;
     });
-
     const [activeTerm, setActiveTerm] = useState<string>("");
-
     const [students, setStudents] = useState<EnrichedStudent[]>([]);
     const [programs, setPrograms] = useState<DEGREE_PROGRAM[]>([]);
     const [courses, setCourses] = useState<COURSE[]>([]);
@@ -92,7 +94,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [auditLogs, setAuditLogs] = useState<AUDIT_LOG[]>([]);
     const [retentionPolicies, setRetentionPolicies] = useState<RETENTION_POLICY[]>([]);
     const [systemSettings, setSystemSettings] = useState<SYSTEM_SETTINGS | null>(null);
-
     const [activeView, setActiveView] = useState<View>("dashboard");
     const [pendingReportFilter, setPendingReportFilter] = useState<string>("All Students");
     const [focusedStudentID, setFocusedStudentID] = useState<string | null>(null);
@@ -100,7 +101,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
     const [pendingSettingsTab, setPendingSettingsTab] = useState<"profile" | "system" | "audit" | null>(null);
     const [highlightReviewTable, setHighlightReviewTable] = useState<boolean>(false);
-    const [pendingLocalTerm, setPendingLocalTerm] = useState<string | null>(null); // FIXED: Instantiated Term Warping bridge
+    const [pendingLocalTerm, setPendingLocalTerm] = useState<string | null>(null);
 
     useEffect(() => {
         localStorage.setItem('compass_auth', isAuthenticated.toString());
@@ -113,7 +114,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
-
         const loadDatabase = async () => {
             setIsInitializing(true);
             const { data, error } = await backendAPI.fetchInitialSystemData();
@@ -130,7 +130,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                 setAuditLogs(data.auditLogs || []);
                 setRetentionPolicies(data.retentionPolicies || []);
                 setSystemSettings(data.systemSettings);
-
                 const currentTerm = data.terms.find(t => t.isCurrent);
                 if (currentTerm) setActiveTerm(currentTerm.termID);
                 else if (data.terms.length > 0) setActiveTerm(data.terms[0].termID);
@@ -139,13 +138,11 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             }
             setIsInitializing(false);
         };
-
         if (isAuthenticated) {
             void loadDatabase();
         } else {
             timer = setTimeout(() => setIsInitializing(false), 0);
         }
-
         return () => {
             if (timer) clearTimeout(timer);
         };
@@ -183,11 +180,11 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             programs, courses, programCourses, records, remarks, standings, terms, coursePrerequisites,
             activeView, pendingReportFilter, focusedStudentID, pendingEvaluatorAction,
             isDarkMode, pendingSettingsTab, highlightReviewTable, retentionPolicies, systemSettings,
-            pendingLocalTerm, // FIXED: Provided downward
+            pendingLocalTerm,
             setRetentionPolicies, setSystemSettings, setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
             setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setCoursePrerequisites, setActiveTerm,
             setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction,
-            setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, setPendingLocalTerm, // FIXED: Provided downward
+            setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, setPendingLocalTerm,
             pushAudit, can
         }}>
             {children}
