@@ -20,8 +20,22 @@ export default function Dashboard() {
     const activeStudentsCount = students.filter(s => s.accountStatus === 'Active').length;
     const onProbationCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'On-Probation').length;
 
-    // Isolated the metric to strictly calculate Advised to Shift for the current active term
-    const advisedToShiftCount = currentTermStandings.filter(ts => ts.termAcademicStatus === 'Advised to Shift').length;
+    // TARGETED FIX: Dashboard metric matches Reports by including current and historical unresolved ATS
+    const activeTermObj = terms.find(t => t.termID === activeTerm);
+    const activeTermStartYear = activeTermObj ? parseInt(activeTermObj.termSY.split('-')[0]) : 9999;
+    const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+    const activeSemWeight = activeTermObj ? semWeights[activeTermObj.termSem] : 0;
+
+    const advisedToShiftCount = students.filter(s => s.accountStatus === 'Active').filter(student => {
+        return standings.some(ts => {
+            if (ts.studentID !== student.studentID) return false;
+            if (ts.termAcademicStatus !== 'Advised to Shift') return false;
+            const t = terms.find(term => term.termID === ts.termID);
+            if (!t) return false;
+            const tStart = parseInt(t.termSY.split('-')[0]);
+            return tStart < activeTermStartYear || (tStart === activeTermStartYear && semWeights[t.termSem] <= activeSemWeight);
+        });
+    }).length;
 
     const manualReviewList = backendAPI.getManualReviewList(standings, remarks, activeTerm, activeUser, records, terms, students, programCourses);
 
@@ -87,8 +101,7 @@ export default function Dashboard() {
                             <thead className="border-b border-slate-100 dark:border-slate-700 text-xs uppercase text-slate-400 dark:text-slate-500">
                             <tr>
                                 <th className="px-5 py-4 font-semibold">Student ID</th>
-                                {/* PHASE 4 FIX: Render Cumulative CQPA as primary metric */}
-                                <th className="px-5 py-4 font-semibold">CQPA</th>
+                                <th className="px-5 py-4 font-semibold">Cumulative CQPA</th>
                                 <th className="px-5 py-4 font-semibold">Current Standing</th>
                                 <th className="px-5 py-4 font-semibold">Issue / Concern</th>
                                 <th className="px-5 py-4 text-right font-semibold">Action</th>
