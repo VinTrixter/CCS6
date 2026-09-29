@@ -10,8 +10,17 @@ export default function Login() {
     const { setIsAuthenticated, setActiveUser, pushAudit, setActiveView } = useStore();
     const [loginInput, setLoginInput] = useState("");
     const [passwordInput, setPasswordInput] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+
+    // SVG icons defined locally for the toggle
+    const EyeIcon = () => (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+    );
+    const EyeSlashIcon = () => (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+    );
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,7 +80,7 @@ export default function Login() {
                             <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">Username</label>
                             <div className="relative">
                                 <I.UserSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                                <input required type="text" placeholder="e.g. rgomez" value={loginInput} onChange={e => setLoginInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
+                                <input required type="text" placeholder="Enter Username" value={loginInput} onChange={e => setLoginInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
                             </div>
                         </div>
 
@@ -81,7 +90,10 @@ export default function Login() {
                                 <div className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-slate-400">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                                 </div>
-                                <input required type="password" placeholder=" " value={passwordInput} onChange={e => setPasswordInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-700 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
+                                <input required type={showPassword ? "text" : "password"} placeholder="Enter Password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} disabled={isLoading} className="w-full rounded-lg border border-slate-300 bg-slate-50 py-3 pl-11 pr-11 text-sm text-slate-700 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700 disabled:opacity-50" />
+                                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+                                    {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
+                                </button>
                             </div>
                         </div>
 

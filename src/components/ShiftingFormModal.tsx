@@ -100,32 +100,32 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
 
     return (
         <>
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm print:hidden p-4">
-                <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white dark:bg-slate-800 shadow-2xl transition-colors flex flex-col max-h-[90vh]">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-6 py-4 shrink-0">
-                        <h2 className="font-bold text-slate-800 dark:text-slate-100">Generate Shifting Form</h2>
-                        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><I.X className="h-5 w-5" /></button>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm print:hidden p-4">
+                <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl transition-colors flex flex-col max-h-[90vh]">
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-6 py-4 shrink-0">
+                        <h2 className="font-bold text-slate-800">Generate Shifting Form</h2>
+                        <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><I.X className="h-5 w-5" /></button>
                     </div>
 
                     <div className="p-6 overflow-y-auto flex-1">
                         {!preselectedStudentID && (
-                            <div className="mb-5 flex rounded-lg bg-slate-100 dark:bg-slate-900 p-1">
-                                <button onClick={() => { setFilterMode('ats'); setLocalSelectedID(""); }} className={`flex-1 rounded-md py-1.5 text-xs font-bold transition ${filterMode === 'ats' ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}>Flagged (ATS)</button>
-                                <button onClick={() => { setFilterMode('all'); setLocalSelectedID(""); }} className={`flex-1 rounded-md py-1.5 text-xs font-bold transition ${filterMode === 'all' ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}>Search All (Voluntary)</button>
+                            <div className="mb-5 flex rounded-lg bg-slate-100 p-1">
+                                <button onClick={() => { setFilterMode('ats'); setLocalSelectedID(""); }} className={`flex-1 rounded-md py-1.5 text-xs font-bold transition ${filterMode === 'ats' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>Flagged (ATS)</button>
+                                <button onClick={() => { setFilterMode('all'); setLocalSelectedID(""); }} className={`flex-1 rounded-md py-1.5 text-xs font-bold transition ${filterMode === 'all' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>Search All (Voluntary)</button>
                             </div>
                         )}
 
-                        <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Select Student</label>
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">Select Student</label>
 
                         {!preselectedStudentID && filterMode === 'all' ? (
                             <div className="mb-5 relative">
                                 <I.Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                <input type="text" placeholder="Search by ID or Name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-blue-700" />
+                                <input type="text" placeholder="Search by ID or Name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-blue-700" />
                                 {searchQuery && (
-                                    <div className="absolute top-full mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg z-10">
+                                    <div className="absolute top-full mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg z-10">
                                         {allSearchResults.map(s => (
-                                            <button key={s.studentID} onClick={() => { setLocalSelectedID(s.studentID); setSearchQuery(""); }} className="flex w-full flex-col items-start border-b border-slate-50 dark:border-slate-700/50 px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700">
-                                                <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{s.studLastName}, {s.studFirstName}</span>
+                                            <button key={s.studentID} onClick={() => { setLocalSelectedID(s.studentID); setSearchQuery(""); }} className="flex w-full flex-col items-start border-b border-slate-50 px-4 py-2 text-left hover:bg-slate-50">
+                                                <span className="font-semibold text-slate-800 text-sm">{s.studLastName}, {s.studFirstName}</span>
                                                 <span className="font-mono text-xs text-slate-500">{s.studentID}</span>
                                             </button>
                                         ))}
@@ -137,7 +137,7 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
                                 value={currentSelectedID}
                                 onChange={(e) => setLocalSelectedID(e.target.value)}
                                 disabled={!!preselectedStudentID}
-                                className="mb-5 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-3 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-blue-700 disabled:opacity-70 transition-colors"
+                                className="mb-5 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-700 disabled:opacity-70 transition-colors"
                             >
                                 <option value="" disabled>-- Select a student --</option>
                                 {preselectedStudentID && targetStudent ? (
@@ -149,10 +149,10 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
                         )}
 
                         {targetStudent && (
-                            <div className="mb-5 flex items-center justify-between rounded-lg border border-blue-100 dark:border-blue-900 bg-blue-50 dark:bg-blue-900/20 p-3">
+                            <div className="mb-5 flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50 p-3">
                                 <div>
-                                    <div className="font-bold text-blue-800 dark:text-blue-300">{targetStudent.studLastName}, {targetStudent.studFirstName}</div>
-                                    <div className="text-xs text-blue-600 dark:text-blue-400">{targetStudent.programCode} • {targetStudent.studentID}</div>
+                                    <div className="font-bold text-blue-800">{targetStudent.studLastName}, {targetStudent.studFirstName}</div>
+                                    <div className="text-xs text-blue-600">{targetStudent.programCode} • {targetStudent.studentID}</div>
                                 </div>
                                 <span className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${isATS ? 'bg-coral text-white' : 'bg-slate-200 text-slate-700'}`}>
                                     {isATS ? 'Advised to Shift' : 'Voluntary'}
@@ -160,33 +160,33 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
                             </div>
                         )}
 
-                        <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Destination Program</label>
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">Destination Program</label>
                         <input
                             required placeholder="e.g., BS MATH" value={shiftingTo} onChange={e => setShiftingTo(e.target.value.toUpperCase())}
-                            className="mb-5 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent dark:bg-slate-900 p-3 text-sm outline-none focus:border-blue-700 uppercase"
+                            className="mb-5 w-full rounded-lg border border-slate-300 bg-transparent p-3 text-sm outline-none focus:border-blue-700 uppercase"
                         />
 
-                        <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700 pt-5">
-                            <div className="col-span-2"><label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Signatories Configuration</label></div>
+                        <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
+                            <div className="col-span-2"><label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Signatories Configuration</label></div>
                             <div>
                                 <label className="mb-1 block text-[10px] font-semibold text-slate-400">Department</label>
-                                <input value={deptName} onChange={e => setDeptName(e.target.value)} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-2 text-sm outline-none focus:border-blue-700" />
+                                <input value={deptName} onChange={e => setDeptName(e.target.value)} className="w-full rounded border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700" />
                             </div>
                             <div>
                                 <label className="mb-1 block text-[10px] font-semibold text-slate-400">Chairperson</label>
-                                <input placeholder="Name (Optional)" value={chairName} onChange={e => setChairName(e.target.value)} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-2 text-sm outline-none focus:border-blue-700" />
+                                <input placeholder="Name (Optional)" value={chairName} onChange={e => setChairName(e.target.value)} className="w-full rounded border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700" />
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-[10px] font-semibold text-slate-400">Dean</label>
-                                <input value={deanName} onChange={e => setDeanName(e.target.value)} className="w-full rounded border border-slate-300 dark:border-slate-600 bg-transparent p-2 text-sm outline-none focus:border-blue-700" />
+                                <input value={deanName} onChange={e => setDeanName(e.target.value)} className="w-full rounded border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700" />
                             </div>
                         </div>
 
                     </div>
 
-                    <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4">
-                        <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition">Cancel</button>
-                        <button onClick={handlePrint} disabled={!targetStudent || !shiftingTo.trim()} className="flex items-center gap-2 rounded-lg bg-blue-700 dark:bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 transition">
+                    <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 bg-slate-50 p-4">
+                        <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-200 transition">Cancel</button>
+                        <button onClick={handlePrint} disabled={!targetStudent || !shiftingTo.trim()} className="flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 transition">
                             <I.Printer className="h-4 w-4" /> Print Document
                         </button>
                     </div>
