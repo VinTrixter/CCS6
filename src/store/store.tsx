@@ -102,19 +102,25 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     // PHASE 2 FIX: Lazy evaluation to dynamically lock default route to Evaluator for Faculty to prevent hard-reload bypasses
     const [activeView, setActiveView] = useState<View>(() => {
-        const stored = localStorage.getItem('compass_user');
-        if (stored) {
+        const storedUser = localStorage.getItem('compass_user');
+        const storedView = localStorage.getItem('compass_activeView') as View | null;
+
+        if (storedUser) {
             try {
-                const parsedUser = JSON.parse(stored);
+                const parsedUser = JSON.parse(storedUser);
                 if (parsedUser && parsedUser.userType === 'Faculty') {
                     return "evaluator";
                 }
             } catch (e) {
-                // Ignore parsing errors, default to dashboard
+                // Ignore parsing errors
             }
         }
-        return "dashboard";
+        return storedView || "dashboard";
     });
+
+    useEffect(() => {
+        localStorage.setItem('compass_activeView', activeView);
+    }, [activeView]);
 
     const [pendingReportFilter, setPendingReportFilter] = useState<string>("All Students");
     const [focusedStudentID, setFocusedStudentID] = useState<string | null>(null);
