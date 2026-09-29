@@ -196,7 +196,8 @@ const cascadeStandings = (
             }
         }
 
-        const standingID = existingStanding ? existingStanding.standingID : `ST-${student.studentID}-${activeTerm}`;
+        // AFTER
+        const standingID = existingStanding ? existingStanding.standingID : generateID('ST-', 10);
         newStandings.push({
             standingID, termQPA, semCQPA, termAcademicStatus: status,
             isConsecutiveOP, yearLevel: evaluatedYearLevel, studentID: student.studentID, termID: activeTerm
@@ -694,8 +695,10 @@ export const backendAPI = {
             const majorYearLevels = curriculum.filter(pc => pc.majorMinorClassif === 'Major').map(pc => pc.yearLevel);
             const calculatedYearLevel = majorYearLevels.length > 0 ? Math.min(...majorYearLevels) : targetYearLevel;
 
+            // AFTER
             const basicStanding: TERM_STANDING = {
-                standingID: `ST-${student.studentID}-${activeTerm}`, termQPA: 0, semCQPA: 0,
+                standingID: generateID('ST-', 10),
+                termQPA: 0, semCQPA: 0,
                 termAcademicStatus: 'Unencoded', isConsecutiveOP: false,
                 yearLevel: calculatedYearLevel,
                 studentID: student.studentID, termID: activeTerm
