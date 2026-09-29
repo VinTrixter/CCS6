@@ -70,16 +70,16 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
 
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-        return localStorage.getItem('compass_auth') === 'true';
+        return sessionStorage.getItem('compass_auth') === 'true';
     });
 
     const [activeUser, setActiveUser] = useState<COMPASS_USER | null>(() => {
-        const stored = localStorage.getItem('compass_user');
+        const stored = sessionStorage.getItem('compass_user');
         if (stored) {
             try {
                 return JSON.parse(stored);
             } catch (e) {
-                localStorage.removeItem('compass_user');
+                sessionStorage.removeItem('compass_user');
                 return null;
             }
         }
@@ -102,8 +102,8 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
 
     // PHASE 2 FIX: Lazy evaluation to dynamically lock default route to Evaluator for Faculty to prevent hard-reload bypasses
     const [activeView, setActiveView] = useState<View>(() => {
-        const storedUser = localStorage.getItem('compass_user');
-        const storedView = localStorage.getItem('compass_activeView') as View | null;
+        const storedUser = sessionStorage.getItem('compass_user');
+        const storedView = sessionStorage.getItem('compass_activeView') as View | null;
 
         if (storedUser) {
             try {
@@ -119,7 +119,7 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     });
 
     useEffect(() => {
-        localStorage.setItem('compass_activeView', activeView);
+        sessionStorage.setItem('compass_activeView', activeView);
     }, [activeView]);
 
     const [pendingReportFilter, setPendingReportFilter] = useState<string>("All Students");
@@ -131,11 +131,11 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [pendingLocalTerm, setPendingLocalTerm] = useState<string | null>(null);
 
     useEffect(() => {
-        localStorage.setItem('compass_auth', isAuthenticated.toString());
+        sessionStorage.setItem('compass_auth', isAuthenticated.toString());
         if (activeUser) {
-            localStorage.setItem('compass_user', JSON.stringify(activeUser));
+            sessionStorage.setItem('compass_user', JSON.stringify(activeUser));
         } else {
-            localStorage.removeItem('compass_user');
+            sessionStorage.removeItem('compass_user');
         }
     }, [isAuthenticated, activeUser]);
 
