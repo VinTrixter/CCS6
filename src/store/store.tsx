@@ -36,6 +36,7 @@ interface CompassState {
     pendingSettingsTab: "profile" | "system" | "audit" | null;
     highlightReviewTable: boolean;
     pendingLocalTerm: string | null;
+    dismissedGhostRows: Record<string, string[]>;
 
     setIsAuthenticated: Dispatch<SetStateAction<boolean>>;
     setActiveUser: Dispatch<SetStateAction<COMPASS_USER | null>>;
@@ -59,6 +60,7 @@ interface CompassState {
     setPendingSettingsTab: Dispatch<SetStateAction<"profile" | "system" | "audit" | null>>;
     setHighlightReviewTable: Dispatch<SetStateAction<boolean>>;
     setPendingLocalTerm: Dispatch<SetStateAction<string | null>>;
+    setDismissedGhostRows: Dispatch<SetStateAction<Record<string, string[]>>>;
 
     pushAudit: (action: string, target: string) => void;
     can: (permission: string) => boolean;
@@ -129,6 +131,18 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [pendingSettingsTab, setPendingSettingsTab] = useState<"profile" | "system" | "audit" | null>(null);
     const [highlightReviewTable, setHighlightReviewTable] = useState<boolean>(false);
     const [pendingLocalTerm, setPendingLocalTerm] = useState<string | null>(null);
+    
+    const [dismissedGhostRows, setDismissedGhostRows] = useState<Record<string, string[]>>(() => {
+        const stored = sessionStorage.getItem('compass_dismissedGhostRows');
+        if (stored) {
+            try { return JSON.parse(stored); } catch (e) { return {}; }
+        }
+        return {};
+    });
+
+    useEffect(() => {
+        sessionStorage.setItem('compass_dismissedGhostRows', JSON.stringify(dismissedGhostRows));
+    }, [dismissedGhostRows]);
 
     useEffect(() => {
         sessionStorage.setItem('compass_auth', isAuthenticated.toString());
@@ -211,12 +225,12 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
             programs, courses, programCourses, records, remarks, standings, terms, coursePrerequisites,
             activeView, pendingReportFilter, focusedStudentID, pendingEvaluatorAction,
             isDarkMode, pendingSettingsTab, highlightReviewTable, retentionPolicies, systemSettings,
-            pendingLocalTerm,
+            pendingLocalTerm, dismissedGhostRows,
 
             setRetentionPolicies, setSystemSettings, setIsAuthenticated, setActiveUser, setStudents, setPrograms, setCourses,
             setProgramCourses, setRecords, setRemarks, setStandings, setTerms, setCoursePrerequisites, setActiveTerm,
             setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction,
-            setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, setPendingLocalTerm,
+            setIsDarkMode, setPendingSettingsTab, setHighlightReviewTable, setPendingLocalTerm, setDismissedGhostRows,
             pushAudit, can
         }}>
             {children}

@@ -43,7 +43,7 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
 };
 
 export default function Evaluator() {
-    const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms, retentionPolicies, pendingLocalTerm, setPendingLocalTerm } = useStore();
+    const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms, retentionPolicies, pendingLocalTerm, setPendingLocalTerm, dismissedGhostRows, setDismissedGhostRows } = useStore();
     const selectedStudent = focusedStudentID ? students.find(s => s.studentID === focusedStudentID) || null : null;
 
     const setSelectedStudent = (student: EnrichedStudent | null) => setFocusedStudentID(student ? student.studentID : null);
@@ -69,8 +69,7 @@ export default function Evaluator() {
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showExtraCourseDropdown]);
-
-    const [dismissedCourses, setDismissedCourses] = useState<string[]>([]);
+    const dismissedCourses = selectedStudent ? (dismissedGhostRows[selectedStudent.studentID] || []) : [];
     const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
     const [editingRemarkID, setEditingRemarkID] = useState<string | null>(null);
     const [remarkForm, setRemarkForm] = useState<{ category: AdvisingCategory; content: string }>({ category: "General Note", content: "" });
@@ -230,6 +229,18 @@ export default function Evaluator() {
     const handleAddExtraCourse = async (courseCode: string) => {
         if (!activeUser || !selectedStudent) return;
 
+        // PHASE 3 FIX: Intercept manual additions if the subject was previously dismissed as a ghost row.
+        // This instantly brings the ghost row back to the UI without saving a blank database row.
+        if (dismissedCourses.includes(courseCode)) {
+            setDismissedGhostRows({
+                ...dismissedGhostRows,
+                [selectedStudent.studentID]: dismissedCourses.filter(c => c !== courseCode)
+            });
+            setShowExtraCourseDropdown(false);
+            setCourseSearch("");
+            return;
+        }
+
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             courseCode, "", undefined, selectedStudent, localTerm, records,
             programCourses, courses, standings, activeUser.userID, terms, retentionPolicies
@@ -274,7 +285,10 @@ export default function Evaluator() {
     const handleDeleteRow = async (code: string, recordID?: string) => {
         if (!activeUser || !selectedStudent) return;
         if (!recordID) {
-            setDismissedCourses([...dismissedCourses, code]);
+            setDismissedGhostRows({
+                ...dismissedGhostRows,
+                [selectedStudent.studentID]: [...dismissedCourses, code]
+            });
             return;
         }
 
@@ -291,7 +305,10 @@ export default function Evaluator() {
             setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
             setSelectedStudent(updated);
         }
-        setDismissedCourses([...dismissedCourses, code]);
+        setDismissedGhostRows({
+            ...dismissedGhostRows,
+            [selectedStudent.studentID]: [...dismissedCourses, code]
+        });
         pushAudit("DELETED_GRADE_RECORD", recordID);
     };
 
@@ -331,7 +348,7 @@ export default function Evaluator() {
 
         pushAudit("CREATED_STUDENT_RECORD", formData.studentID);
         setSelectedStudent(newStudent);
-        setSearchQuery(""); setActiveTab("grades"); setLeftMode("search"); setDismissedCourses([]);
+        setSearchQuery(""); setActiveTab("grades"); setLeftMode("search");
         setFormData({ studentID: "", firstName: "", middleName: "", lastName: "", shsTrack: "STEM", programCode: "", yearLevel: "", yearEnrolled: currentYearStr });
     };
 
