@@ -42,6 +42,8 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
     );
 };
 
+const EMPTY_ARRAY: string[] = [];
+
 export default function Evaluator() {
     const { students, setStudents, programs, courses, programCourses, records, setRecords, remarks, setRemarks, coursePrerequisites, standings, setStandings, activeUser, pushAudit, activeTerm, can, focusedStudentID, setFocusedStudentID, pendingEvaluatorAction, setPendingEvaluatorAction, terms, retentionPolicies, pendingLocalTerm, setPendingLocalTerm, dismissedGhostRows, setDismissedGhostRows } = useStore();
     const selectedStudent = focusedStudentID ? students.find(s => s.studentID === focusedStudentID) || null : null;
@@ -69,7 +71,8 @@ export default function Evaluator() {
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showExtraCourseDropdown]);
-    const dismissedCourses = selectedStudent ? (dismissedGhostRows[selectedStudent.studentID] || []) : [];
+    
+    const dismissedCourses = selectedStudent ? (dismissedGhostRows[selectedStudent.studentID] || EMPTY_ARRAY) : EMPTY_ARRAY;
     const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
     const [editingRemarkID, setEditingRemarkID] = useState<string | null>(null);
     const [remarkForm, setRemarkForm] = useState<{ category: AdvisingCategory; content: string }>({ category: "General Note", content: "" });
@@ -85,7 +88,10 @@ export default function Evaluator() {
     const [displayRows, setDisplayRows] = useState<EnrichedGradeRow[]>([]);
     const [progressStats, setProgressStats] = useState({ completed: [] as PROGRAM_COURSE[], enrolled: [] as PROGRAM_COURSE[], remaining: [] as PROGRAM_COURSE[] });
     const [isLoading, setIsLoading] = useState(false);
-    const [localTerm, setLocalTerm] = useState<string>(activeTerm);
+    const [localTerm, setLocalTerm] = useState<string>(() => sessionStorage.getItem('compass_evaluatorLocalTerm') || activeTerm);
+    useEffect(() => {
+        if (localTerm) sessionStorage.setItem('compass_evaluatorLocalTerm', localTerm);
+    }, [localTerm]);
 
     const searchResults = students.filter(s => {
         const q = searchQuery.toLowerCase().trim();
@@ -148,10 +154,6 @@ export default function Evaluator() {
         return semWeights[b.termSem] - semWeights[a.termSem];
     });
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setLocalTerm(activeTerm);
-    }, [activeTerm, selectedStudent?.studentID]);
 
     useEffect(() => {
         if (pendingLocalTerm && localTerm !== pendingLocalTerm) {
@@ -535,7 +537,7 @@ export default function Evaluator() {
                                                 <input type="text" placeholder="Last Name" value={editFormData.studLastName} onChange={e => setEditFormData({...editFormData, studLastName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
 
                                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{programs.filter(p => !p.isArchived || p.programCode === editFormData.programCode).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
                                                     <select value={editFormData.yearLevel} onChange={e => setEditFormData({...editFormData, yearLevel: Number(e.target.value) as EnrichedStudent["yearLevel"]})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
                                                     <select value={editFormData.shsTrack} onChange={e => setEditFormData({...editFormData, shsTrack: e.target.value as EnrichedStudent["shsTrack"]})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">
                                                         <option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option>

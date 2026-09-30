@@ -122,7 +122,10 @@ export function Header() {
                 <div className="relative">
                     <button onClick={() => { setProfileOpen(!profileOpen); setBellOpen(false); }} className={`flex items-center gap-2 rounded-full py-1 pl-1 pr-3 transition ${profileOpen ? "bg-slate-100" : "hover:bg-slate-100"}`}>
                         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-800 text-xs font-bold text-white">{initials}</span>
-                        <span className="hidden text-sm font-medium text-slate-700 lg:block">{activeUser?.userFirstName} {activeUser?.userLastName}</span>
+                        <div className="hidden flex-col items-start lg:flex">
+                            <span className="text-sm font-medium text-slate-700 leading-none">{activeUser?.userFirstName} {activeUser?.userLastName}</span>
+                            <span className="text-[10px] text-slate-500 font-medium leading-tight mt-0.5">{activeUser?.userType.replace(/_/g, ' ')}</span>
+                        </div>
                         <I.ChevronDown className="h-4 w-4 text-slate-400" />
                     </button>
 

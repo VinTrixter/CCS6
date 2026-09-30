@@ -1,5 +1,5 @@
 // src/components/Reports.tsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useStore } from "../store/store";
 import type { TERM_STANDING } from "../store/types";
 import { backendAPI, type EnrichedStudent } from "../backend/api";
@@ -25,7 +25,7 @@ export default function Reports() {
     const [reportData, setReportData] = useState<ReportRecord[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
-    const targetStandings = standings.filter(ts => ts.termID === selectedTermID);
+    const targetStandings = useMemo(() => standings.filter(ts => ts.termID === selectedTermID), [standings, selectedTermID]);
     const targetTermDetails = terms.find(t => t.termID === selectedTermID);
 
     useEffect(() => {

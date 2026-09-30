@@ -1,5 +1,5 @@
 // src/components/Dashboard.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useStore } from "../store/store";
 import { backendAPI } from "../backend/api";
 import ShiftingFormModal from "./ShiftingFormModal";
@@ -9,8 +9,13 @@ export default function Dashboard() {
     const { activeTerm, students, standings, remarks, activeUser, setActiveView, setPendingReportFilter, setFocusedStudentID, setPendingEvaluatorAction, highlightReviewTable, setHighlightReviewTable, records, terms, can, setPendingLocalTerm, programCourses } = useStore();
     const [showShiftingModal, setShowShiftingModal] = useState(false);
 
+    const reviewTableRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         if (highlightReviewTable) {
+            if (reviewTableRef.current) {
+                reviewTableRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
             const timer = setTimeout(() => setHighlightReviewTable(false), 2000);
             return () => clearTimeout(timer);
         }
@@ -55,9 +60,11 @@ export default function Dashboard() {
 
     return (
         <div className="flex w-full flex-col gap-6 p-6 lg:p-8">
-            <div className="flex flex-col md:flex-row gap-4 lg:gap-6">
-                <div className="flex-1 w-full flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors">
-                    <div className="p-6">
+            <div className="flex flex-col gap-2">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 px-1">For {activeTermObj ? `${activeTermObj.termSem}, SY ${activeTermObj.termSY}` : activeTerm},</h2>
+                <div className="flex flex-col md:flex-row gap-4 lg:gap-6">
+                    <div className="flex-1 w-full flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors">
+                        <div className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><I.Users className="h-5 w-5" /></div>
                             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Active Students</h3>
@@ -89,9 +96,10 @@ export default function Dashboard() {
                     <button onClick={() => navigateToReport("Advised to Shift")} className="border-t border-slate-300/50 bg-slate-200/30 py-3 text-xs font-bold uppercase tracking-wider text-slate-700 transition hover:bg-slate-300/50">View Mandatory Shifts</button>
                 </div>
             </div>
+            </div>
 
             <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-                <div className={`flex-1 flex flex-col overflow-hidden rounded-xl border transition-all duration-500 ${highlightReviewTable ? 'border-blue-500 ring-4 ring-blue-500/50 shadow-blue-500/20 shadow-lg scale-[1.01]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div ref={reviewTableRef} className={`flex-1 flex flex-col overflow-hidden rounded-xl border transition-all duration-500 ${highlightReviewTable ? 'border-blue-500 ring-4 ring-blue-500/50 shadow-blue-500/20 shadow-lg scale-[1.01]' : 'border-slate-200 bg-white shadow-sm'}`}>
                     <div className={`border-b border-slate-100 px-5 py-3 transition-colors duration-500 ${highlightReviewTable ? 'bg-blue-50' : 'bg-slate-50'}`}>
                         <h2 className="font-bold text-slate-800">Pending Automated Reviews</h2>
                         <p className="mt-1 text-xs font-semibold text-slate-500">Records dynamically flag and clear as system dependencies are met.</p>

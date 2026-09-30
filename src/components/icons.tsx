@@ -21,6 +21,7 @@ export const Plus = ({ className }: IconProps) => <svg {...base(className)}><pat
 export const Search = ({ className }: IconProps) => <svg {...base(className)}><circle cx="11" cy="11" r="7" /><path d="m21 21-3.5-3.5" /></svg>
 export const X = ({ className }: IconProps) => <svg {...base(className)}><path d="M18 6 6 18M6 6l12 12" /></svg>
 export const Edit2 = ({ className }: IconProps) => <svg {...base(className)}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
+export const ArchiveRestore = ({ className }: IconProps) => <svg {...base(className)}><rect width="20" height="5" x="2" y="3" rx="1" /><path d="M4 8v11a2 2 0 0 0 2 2h2" /><path d="M20 8v11a2 2 0 0 1-2 2h-2" /><path d="m9 15 3-3 3 3" /><path d="M12 12v9" /></svg>
 export const ShieldAlert = ({ className }: { className?: string }) => (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
 );

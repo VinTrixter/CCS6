@@ -998,11 +998,21 @@ export const backendAPI = {
         const baseCourse: COURSE = { courseCode: payload.courseCode, courseTitle: payload.title, courseUnits: Number(payload.units) };
         const existingCourse = courses.find(c => c.courseCode === payload.courseCode);
 
-        if (!existingCourse) await supabase.from('COURSE').insert([baseCourse]);
-        else await supabase.from('COURSE').update(baseCourse).eq('courseCode', payload.courseCode);
+        if (!existingCourse) {
+            const { error } = await supabase.from('COURSE').insert([baseCourse]);
+            if (error) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: error.message };
+        } else {
+            const { error } = await supabase.from('COURSE').update(baseCourse).eq('courseCode', payload.courseCode);
+            if (error) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: error.message };
+        }
 
-        if (editingCourseCode) await supabase.from('PROGRAM_COURSE').update(progCourseDB).eq('programCourseID', progCourseDB.programCourseID);
-        else await supabase.from('PROGRAM_COURSE').insert([progCourseDB]);
+        if (editingCourseCode) {
+            const { error } = await supabase.from('PROGRAM_COURSE').update(progCourseDB).eq('programCourseID', progCourseDB.programCourseID);
+            if (error) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: error.message };
+        } else {
+            const { error } = await supabase.from('PROGRAM_COURSE').insert([progCourseDB]);
+            if (error) return { coursesData: null, programCoursesData: null, coursePrerequisitesData: null, error: error.message };
+        }
 
         const newCourses = existingCourse ? courses.map(c => c.courseCode === payload.courseCode ? baseCourse : c) : [...courses, baseCourse];
         const { yrLevel, ...rest } = progCourseDB;
@@ -1128,17 +1138,6 @@ export const backendAPI = {
         currentPrereqs: COURSE_PREREQUISITE[],
         courses: COURSE[]
     ) {
-        const { error: orphanError } = await supabase
-            .from("STUDENT_PROGRAM")
-            .update({ programCode: "Unassigned" })
-            .eq("programCode", programCode);
-
-        if (orphanError) {
-            return {
-                programsData: null, programCoursesData: null, coursePrerequisitesData: null, coursesData: null,
-                error: "Failed to safely unassign enrolled students: " + orphanError.message
-            };
-        }
 
         const { error: programError } = await supabase
             .from("DEGREE_PROGRAM")
@@ -1157,6 +1156,22 @@ export const backendAPI = {
             programCoursesData: programCourses,
             coursePrerequisitesData: currentPrereqs,
             coursesData: courses,
+            error: null
+        };
+    },
+
+    async restoreProgram(programCode: string, programs: DEGREE_PROGRAM[]) {
+        const { error: programError } = await supabase
+            .from("DEGREE_PROGRAM")
+            .update({ isArchived: false })
+            .eq("programCode", programCode);
+
+        if (programError) {
+            return { programsData: null, error: programError.message };
+        }
+
+        return {
+            programsData: programs.map(p => p.programCode === programCode ? { ...p, isArchived: false } : p),
             error: null
         };
     },
