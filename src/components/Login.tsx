@@ -98,7 +98,7 @@ export default function Login() {
                         </div>
 
                         <button type="submit" disabled={isLoading} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 py-3 text-sm font-bold text-white shadow-md shadow-blue-700/20 transition hover:bg-blue-800 active:scale-[0.98] disabled:opacity-70">
-                            {isLoading ? "Authenticating..." : "Establish Secure Session"} <I.ChevronRight className="h-4 w-4" />
+                            {isLoading ? "Authenticating..." : "Login"} <I.ChevronRight className="h-4 w-4" />
                         </button>
                     </form>
                 </div>

@@ -96,6 +96,10 @@ const cascadeStandings = (
                 .map(pc => pc!.yearLevel);
             if (majorYearLevels.length > 0) {
                 evaluatedYearLevel = Math.min(...majorYearLevels);
+            } else {
+                const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
+                const calculatedChronologicalYear = Math.max(1, termStartYear - student.yearEnrolled + 1);
+                evaluatedYearLevel = Math.min(dynamicMax, calculatedChronologicalYear);
             }
         }
 
@@ -226,7 +230,7 @@ export const backendAPI = {
             if (ts.termAcademicStatus === 'Advised to Shift') {
                 const isAddressed = safeRemarks.some(r => r.standingID === ts.standingID && r.content && r.content.includes('[Shifting Recommended]'));
                 if (!isAddressed) {
-                    const desc = ts.isConsecutiveOP ? "Consecutive Probation" : "Academic Deficit (CQPA / 2-Strike)";
+                    const desc = ts.isConsecutiveOP ? "Consecutive Probation" : "Major Subject Failed Twice";
                     reviewItems.push({ ...ts, issueDescription: desc, targetTermID: activeTerm });
                 }
             } else if (ts.termAcademicStatus === 'Unencoded' && activeUser?.userType === 'Deans_Office_Staff') {
@@ -373,7 +377,7 @@ export const backendAPI = {
             supabase.from('COURSE').select('*'),
             supabase.from('PROGRAM_COURSE').select('*'),
             supabase.from('ACADEMIC_RECORD').select('*'),
-            supabase.from('ADVISING_REMARK').select('*'),
+            supabase.from('ADVISING_REMARK').select('*, COMPASS_USER(userFirstName, userLastName)'),
             supabase.from('TERM_STANDING').select('*'),
             supabase.from('ACADEMIC_TERM').select('*'),
             supabase.from('COURSE_PREREQUISITE').select('*'),
@@ -544,7 +548,7 @@ export const backendAPI = {
     async getEnrichedGrades(
         student: EnrichedStudent | null, activeTerm: string, termDetails: ACADEMIC_TERM | undefined,
         programCourses: PROGRAM_COURSE[], courses: COURSE[], records: ACADEMIC_RECORD[],
-        prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[], globalActiveTermID: string,
+        prereqs: COURSE_PREREQUISITE[], dismissedCourses: string[], _globalActiveTermID: string,
         retentionPolicies: RETENTION_POLICY[]
     ) {
         if (!student || !termDetails) return [];
@@ -575,14 +579,20 @@ export const backendAPI = {
                 }
                 displayRows.push({
                     courseCode: pc.courseCode, courseTitle: baseCourse?.courseTitle || "Unknown", courseUnits: baseCourse?.courseUnits || 0,
-                    isMissingPrereq, finalGrade: record.finalGrade !== null ? (record.finalGrade === 0 ? "F" : record.finalGrade.toString()) : (record.gradeRemarks || ""),
+                    isMissingPrereq, finalGrade: record.finalGrade !== null ? (record.finalGrade === 0 ? "F" : record.finalGrade.toFixed(2)) : (record.gradeRemarks || ""),
                     isBlank: record.finalGrade === null && !record.gradeRemarks, recordID: record.recordID
                 });
             }
         });
 
-        if (termDetails.termID === globalActiveTermID) {
-            const curriculum = programCourses.filter(pc => pc.programCode === student.programCode && pc.yearLevel === student.yearLevel && pc.termSem === termDetails.termSem);
+        const expectedStartYear = student.yearEnrolled + (student.yearLevel - 1);
+        const expectedSY = `${expectedStartYear}-${expectedStartYear + 1}`;
+
+        if (termDetails.termSY === expectedSY) {
+            const curriculum = programCourses.filter(pc => {
+                const pcYear = Number(pc.yearLevel) || Number((pc as any).yrLevel);
+                return pc.programCode === student.programCode && pcYear === student.yearLevel && pc.termSem === termDetails.termSem;
+            });
             curriculum.forEach(pc => {
                 const hasPassed = records.some(r => {
                     if (r.studentID !== student.studentID) return false;
@@ -919,7 +929,7 @@ export const backendAPI = {
 
     async upsertRemark(
         remarkForm: { category: string, content: string }, remarkID: string | null, studentID: string,
-        activeTerm: string, userID: string, remarks: ADVISING_REMARK[], standings: TERM_STANDING[]
+        activeTerm: string, activeUser: COMPASS_USER, remarks: ADVISING_REMARK[], standings: TERM_STANDING[]
     ) {
         const targetStanding = standings.find(ts => ts.studentID === studentID && ts.termID === activeTerm);
         if (!targetStanding) return { data: null, error: "Academic standing record missing for active term." };
@@ -935,8 +945,24 @@ export const backendAPI = {
             updatedRemarks[index] = updatedRemark;
         } else {
             const finalContent = `[${remarkForm.category}] ${remarkForm.content}`;
-            updatedRemark = { remarkID: generateID('RM-'), content: finalContent, timestamp: new Date().toISOString(), userID, standingID: targetStanding.standingID };
-            const { error } = await supabase.from('ADVISING_REMARK').insert([updatedRemark]);
+            updatedRemark = {
+                remarkID: generateID('RM-'),
+                content: finalContent,
+                timestamp: new Date().toISOString(),
+                userID: activeUser.userID,
+                standingID: targetStanding.standingID,
+                COMPASS_USER: {
+                    userFirstName: activeUser.userFirstName,
+                    userLastName: activeUser.userLastName
+                }
+            };
+            const { error } = await supabase.from('ADVISING_REMARK').insert([{
+                remarkID: updatedRemark.remarkID,
+                content: updatedRemark.content,
+                timestamp: updatedRemark.timestamp,
+                userID: updatedRemark.userID,
+                standingID: updatedRemark.standingID
+            }]);
             if (error) return { data: null, error: error.message };
             updatedRemarks.push(updatedRemark);
         }

@@ -6,8 +6,8 @@ import { backendAPI } from "../backend/api";
 
 const navItems: { id: View; label: string; icon: React.ElementType }[] = [
     { id: "dashboard", label: "Dashboard", icon: I.Grid },
-    { id: "evaluator", label: "Student Manager", icon: I.UserSearch },
-    { id: "curriculum", label: "Curriculum Manager", icon: I.Book },
+    { id: "evaluator", label: "Student Management", icon: I.UserSearch },
+    { id: "curriculum", label: "Curriculum Management", icon: I.Book },
     { id: "reports", label: "Reports & Archives", icon: I.FileChart },
     { id: "settings", label: "System Settings", icon: I.Settings },
 ];
@@ -169,7 +169,7 @@ export function Sidebar() {
 
             <aside
                 className={`fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col justify-between border-r border-slate-200 bg-slate-50 print:hidden transition-transform duration-300 lg:relative lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
-                style={{ width: 232 }}
+                style={{ width: 260 }}
             >
                 <div>
                     <nav className="flex flex-col gap-1 p-3">

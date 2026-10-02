@@ -401,7 +401,14 @@ export default function Curriculum() {
                                     &larr; Back to Catalog
                                 </button>
                                 <div className="flex items-center justify-between">
-                                    <div><h2 className="text-xl font-bold text-slate-800">{selectedProgram.programTitle}</h2><div className="mt-1 text-sm text-slate-500">Effective Year: <span className="font-semibold text-slate-700">{selectedProgram.curriculumYear}</span></div></div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800">{selectedProgram.programTitle}</h2>
+                                        <div className="mt-1 text-sm text-slate-500">Effective Year: <span className="font-semibold text-slate-700">{selectedProgram.curriculumYear}</span></div>
+                                        <div className="mt-3 flex items-center gap-4 text-[10px] font-bold text-slate-500">
+                                            <div className="flex items-center gap-1.5"><span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 uppercase">MAJOR</span> <span>CCS course that is subject to 2-strike rule</span></div>
+                                            <div className="flex items-center gap-1.5"><span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 uppercase">CQPA</span> <span>Course is included in CQPA calculation</span></div>
+                                        </div>
+                                    </div>
                                     {can('manage_curriculum') ? (<button onClick={() => openCourseForm()} className="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700 transition">+ Add Subject</button>) : (<div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700"><I.Warning className="h-4 w-4" />Read-Only Mode</div>)}
                                 </div>
                             </div>
@@ -479,7 +486,22 @@ export default function Curriculum() {
                                                                                 <span>{displayPrereqs}</span>
                                                                             )}
                                                                         </td>
-                                                                        <td className="px-5 py-3 text-center"><div className="flex justify-center gap-1">{course.majorMinorClassif === 'Major' && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">MAJOR</span>}{course.isCQPAIncluded && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">CQPA</span>}</div></td>
+                                                                        <td className="px-5 py-3 text-center">
+                                                                            <div className="flex justify-center gap-1">
+                                                                                {course.majorMinorClassif === 'Major' &&
+                                                                                    <div className="group relative flex items-center justify-center cursor-help">
+                                                                                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 transition-colors hover:bg-amber-500 hover:text-white uppercase">MAJOR</span>
+                                                                                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 w-max -translate-x-1/2 rounded bg-slate-800 px-2 py-1 text-[10px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">Repeated failure in this course results in Advised to Shift standing</span>
+                                                                                    </div>
+                                                                                }
+                                                                                {course.isCQPAIncluded &&
+                                                                                    <div className="group relative flex items-center justify-center cursor-help">
+                                                                                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 transition-colors hover:bg-indigo-600 hover:text-white uppercase">CQPA</span>
+                                                                                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 w-max -translate-x-1/2 rounded bg-slate-800 px-2 py-1 text-[10px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">This course is included in CQPA calculation</span>
+                                                                                    </div>
+                                                                                }
+                                                                            </div>
+                                                                        </td>
                                                                         <td className="px-5 py-3 text-right">{can('manage_curriculum') && (<div className="flex items-center justify-end gap-2"><button onClick={() => openCourseForm(course)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-700 transition"><I.Edit2 className="h-4 w-4" /></button><button onClick={() => handleDeleteCourse(course.courseCode)} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-coral transition"><I.X className="h-4 w-4" /></button></div>)}</td>
                                                                     </tr>
                                                                 );

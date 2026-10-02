@@ -92,6 +92,10 @@ export interface ADVISING_REMARK {
     timestamp: string;
     userID: string;
     standingID: string;
+    COMPASS_USER?: {
+        userFirstName: string;
+        userLastName: string;
+    };
 }
 
 export interface AUDIT_LOG {

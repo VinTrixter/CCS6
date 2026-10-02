@@ -57,6 +57,9 @@ export default function Evaluator() {
     const [editFormData, setEditFormData] = useState<EnrichedStudent | null>(null);
 
     const [showExtraCourseDropdown, setShowExtraCourseDropdown] = useState(false);
+    const [showTermDropdown, setShowTermDropdown] = useState(false);
+    const [termSearchQuery, setTermSearchQuery] = useState("");
+    const termDropdownRef = useRef<HTMLDivElement>(null);
     const [courseSearch, setCourseSearch] = useState("");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -65,12 +68,15 @@ export default function Evaluator() {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setShowExtraCourseDropdown(false);
             }
+            if (termDropdownRef.current && !termDropdownRef.current.contains(event.target as Node)) {
+                setShowTermDropdown(false);
+            }
         };
-        if (showExtraCourseDropdown) {
+        if (showExtraCourseDropdown || showTermDropdown) {
             document.addEventListener("mousedown", handleClickOutside);
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [showExtraCourseDropdown]);
+    }, [showExtraCourseDropdown, showTermDropdown]);
     
     const dismissedCourses = selectedStudent ? (dismissedGhostRows[selectedStudent.studentID] || EMPTY_ARRAY) : EMPTY_ARRAY;
     const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
@@ -350,6 +356,12 @@ export default function Evaluator() {
 
         pushAudit("CREATED_STUDENT_RECORD", formData.studentID);
         setSelectedStudent(newStudent);
+
+        if (newStudent.yearLevel === 1) {
+            const targetTerm = terms.find(t => t.termSY === `${newStudent.yearEnrolled}-${newStudent.yearEnrolled + 1}` && t.termSem === "1st Semester");
+            if (targetTerm) setLocalTerm(targetTerm.termID);
+        }
+
         setSearchQuery(""); setActiveTab("grades"); setLeftMode("search");
         setFormData({ studentID: "", firstName: "", middleName: "", lastName: "", shsTrack: "STEM", programCode: "", yearLevel: "", yearEnrolled: currentYearStr });
     };
@@ -410,7 +422,7 @@ export default function Evaluator() {
         e.preventDefault();
         if (!activeUser || !remarkForm.content.trim() || !selectedStudent) return;
 
-        const { data, error } = await backendAPI.upsertRemark(remarkForm, editingRemarkID, selectedStudent.studentID, localTerm, activeUser.userID, remarks, standings);
+        const { data, error } = await backendAPI.upsertRemark(remarkForm, editingRemarkID, selectedStudent.studentID, localTerm, activeUser, remarks, standings);
         if (error) return alert(error);
         if (data) setRemarks(data);
 
@@ -558,7 +570,7 @@ export default function Evaluator() {
                                         ) : (
                                             <div className="mt-5 flex flex-wrap lg:grid lg:grid-cols-12 gap-y-4 gap-x-4 lg:gap-x-6 rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors">
                                                 <div className="flex-1 min-w-fit lg:col-span-4">
-                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">QPA</div>
+                                                    <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">TQPA</div>
                                                     <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{termStanding?.termQPA?.toFixed(2) || "0.00"}</div>
                                                 </div>
                                                 <div className="flex-1 min-w-fit lg:col-span-4">
@@ -632,17 +644,32 @@ export default function Evaluator() {
                                     <div className="flex items-center justify-between border-b border-slate-100 p-4 flex-wrap gap-4">
                                         <div className="flex items-center gap-4">
                                             <div className="text-sm font-bold text-slate-700">Encoded Subjects ({displayRows.length})</div>
-                                            <select
-                                                value={localTerm}
-                                                onChange={e => setLocalTerm(e.target.value)}
-                                                className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-700 transition-colors"
-                                            >
-                                                {availableTerms.map(t => (
-                                                    <option key={t.termID} value={t.termID}>
-                                                        {t.termSem}, AY {t.termSY} {t.termID === activeTerm ? "(Current)" : ""}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            <div className="relative">
+                                                <button onClick={() => { setShowTermDropdown(!showTermDropdown); setTermSearchQuery(""); }} className="flex items-center gap-2 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none hover:border-blue-700 transition-colors">
+                                                    {localTermDetails ? `${localTermDetails.termSem}, AY ${localTermDetails.termSY} ${localTermDetails.termID === activeTerm ? "(Current)" : ""}` : "Select Term..."}
+                                                    <I.ChevronDown className="h-3 w-3" />
+                                                </button>
+                                                {showTermDropdown && (
+                                                    <div ref={termDropdownRef} className="absolute left-0 top-full z-20 mt-1 max-h-[300px] w-[320px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                                                        <div className="sticky top-0 z-10 bg-slate-100 shadow-sm">
+                                                            <div className="border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Available Terms</div>
+                                                            <input type="text" autoFocus value={termSearchQuery} onChange={e => setTermSearchQuery(e.target.value)} placeholder="Search term or year..." className="w-full border-b border-slate-200 bg-transparent px-3 py-2 text-xs text-slate-700 outline-none" onClick={e => e.stopPropagation()} />
+                                                        </div>
+                                                        {availableTerms.filter(t => {
+                                                            const searchStr = `${t.termSem} ${t.termSY}`.toLowerCase();
+                                                            return searchStr.includes(termSearchQuery.toLowerCase());
+                                                        }).map(t => (
+                                                            <button key={t.termID} onClick={() => { setLocalTerm(t.termID); setShowTermDropdown(false); }} className={`flex w-full items-center justify-between border-b border-slate-50 px-4 py-2 text-left text-sm transition ${t.termID === localTerm ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                                                                <span className={`font-bold ${t.termID === localTerm ? 'text-blue-700' : 'text-slate-800'}`}>{t.termSem}</span>
+                                                                <span className="text-xs text-slate-400">AY {t.termSY} {t.termID === activeTerm ? "(Current)" : ""}</span>
+                                                            </button>
+                                                        ))}
+                                                        {availableTerms.filter(t => `${t.termSem} ${t.termSY}`.toLowerCase().includes(termSearchQuery.toLowerCase())).length === 0 && (
+                                                            <div className="px-4 py-3 text-center text-xs text-slate-400">No terms match search.</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                         {can('encode_grades') && (
                                             <div className="flex gap-2">
@@ -723,7 +750,7 @@ export default function Evaluator() {
                             {activeTab === "history" && (
                                 <table className="w-full text-left text-sm text-slate-600">
                                     <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-400">
-                                    <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">QPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
+                                    <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">TQPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                     {sortedYears.map(year => (
@@ -812,7 +839,7 @@ export default function Evaluator() {
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-5 space-y-5">
                                         <div className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm transition-colors"><h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-blue-700">Completed Courses ({filterProgress(progressStats.completed).length})</h3><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{filterProgress(progressStats.completed).map(pc => (<div key={pc.courseCode} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs transition-colors"><span className="font-bold text-slate-800">{pc.courseCode}</span></div>))}</div></div>
-                                        <div className="rounded-xl border border-amber-200 bg-white p-4 shadow-sm transition-colors"><h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-700">Currently Enrolled ({filterProgress(progressStats.enrolled).length})</h3><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{filterProgress(progressStats.enrolled).map(pc => (<div key={pc.courseCode} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs transition-colors"><span className="font-bold text-slate-800">{pc.courseCode}</span></div>))}</div></div>
+
                                         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors"><h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-600">Remaining Requirements ({filterProgress(progressStats.remaining).length})</h3><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{filterProgress(progressStats.remaining).map(pc => (<div key={pc.courseCode} className="rounded-md border border-dashed border-slate-300 bg-slate-50/50 px-3 py-2 text-xs opacity-60 transition-colors"><span className="font-bold text-slate-600">{pc.courseCode}</span></div>))}</div></div>
                                     </div>
                                 </div>
@@ -825,9 +852,14 @@ export default function Evaluator() {
                                             <div key={remark.remarkID} className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors">
                                                 <div className="mb-2 flex justify-between">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-slate-400">{remark.timestamp.split('T')[0]}</span>
+                                                        <span className="text-xs font-bold text-slate-700">
+                                                            {remark.COMPASS_USER ? `${remark.COMPASS_USER.userFirstName} ${remark.COMPASS_USER.userLastName}` : "Unknown User"}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400">
+                                                            {new Date(remark.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
                                                     </div>
-                                                    {can('add_remarks') && (
+                                                    {can('add_remarks') && activeUser?.userID === remark.userID && (
                                                         <div className="flex items-center gap-2">
                                                             <button onClick={() => { setEditingRemarkID(remark.remarkID); setRemarkForm({ category: "General Note", content: remark.content }); }} className="text-slate-400 transition hover:text-blue-700"><I.Edit2 className="h-4 w-4" /></button>
                                                             <button onClick={() => handleDeleteRemark(remark.remarkID)} className="text-slate-400 transition hover:text-coral"><I.X className="h-4 w-4" /></button>

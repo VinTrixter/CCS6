@@ -250,7 +250,7 @@ export default function Settings() {
             return !(
                 (auditFilters.start && logDate < auditFilters.start) ||
                 (auditFilters.end && logDate > auditFilters.end) ||
-                (auditFilters.user && log.userID !== auditFilters.user) ||
+                (auditFilters.user && !log.userID.toLowerCase().includes(auditFilters.user.toLowerCase())) ||
                 (auditFilters.action && !log.action.includes(auditFilters.action)) ||
                 (auditFilters.target && !log.target.toLowerCase().includes(auditFilters.target.toLowerCase()))
             );

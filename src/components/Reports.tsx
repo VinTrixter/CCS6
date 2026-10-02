@@ -114,11 +114,13 @@ export default function Reports() {
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Year</label>
                             <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-700 transition-colors"><option value="All">All Years</option>{[1, 2, 3, 4, 5, 6].map(y => <option key={y} value={y.toString()}>Year {y}</option>)}</select>
                         </div>
-                        <div className="shrink-0 w-full sm:w-auto">
-                            <button onClick={() => window.print()} disabled={!can('generate_forms') || reportData.length === 0 || isLoading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 h-[38px]">
-                                <I.Printer className="h-4 w-4" /> Generate PDF
-                            </button>
-                        </div>
+                        {activeUser?.userType !== 'Faculty' && (
+                            <div className="shrink-0 w-full sm:w-auto">
+                                <button onClick={() => window.print()} disabled={!can('generate_forms') || reportData.length === 0 || isLoading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 h-[38px]">
+                                    <I.Printer className="h-4 w-4" /> Generate PDF
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -147,7 +149,7 @@ export default function Reports() {
                     <tr>
                         <th className="px-5 py-4 font-bold">Student</th>
                         <th className="px-5 py-4 text-center font-bold">Program & Yr</th>
-                        <th className="px-5 py-4 text-center font-bold">QPA</th>
+                        <th className="px-5 py-4 text-center font-bold">TQPA</th>
                         <th className="px-5 py-4 text-center font-bold">CQPA</th>
                         <th className="px-5 py-4 text-right font-bold">Academic Status</th>
                     </tr>
