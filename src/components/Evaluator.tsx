@@ -807,7 +807,7 @@ export default function Evaluator() {
                                                                                     <tr key={rec.recordID} className="border-b border-slate-100 last:border-0">
                                                                                         <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
                                                                                         <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
-                                                                                        <td className="py-2 text-right font-mono font-bold text-slate-800">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade) : (rec.gradeRemarks || '-')}</td>
+                                                                                        <td className="py-2 text-right font-mono font-bold text-slate-800">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade.toFixed(2)) : (rec.gradeRemarks || '-')}</td>
                                                                                     </tr>
                                                                                 )
                                                                             })}
