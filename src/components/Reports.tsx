@@ -86,7 +86,7 @@ export default function Reports() {
                                     <div className="sticky top-0 z-10 bg-slate-100 shadow-sm">
                                         <input type="text" autoFocus value={termSearchQuery} onChange={e => setTermSearchQuery(e.target.value)} placeholder="Search semester or AY..." className="w-full border-b border-slate-200 bg-transparent px-4 py-2.5 text-xs text-slate-700 outline-none" onClick={e => e.stopPropagation()} />
                                     </div>
-                                    {terms.filter(t => `${t.termSem} ${t.termSY}`.toLowerCase().includes(termSearchQuery.toLowerCase())).sort((a,b) => b.termSY.localeCompare(a.termSY) || b.termSem.localeCompare(a.termSem)).map(t => (
+                                    {terms.filter(t => `${t.termSem} ${t.termSY}`.toLowerCase().includes(termSearchQuery.toLowerCase())).sort((a, b) => b.termSY.localeCompare(a.termSY) || b.termSem.localeCompare(a.termSem)).map(t => (
                                         <button key={t.termID} onClick={() => { setSelectedTermID(t.termID); setShowTermDropdown(false); setTermSearchQuery(""); }} className="flex w-full items-center justify-between border-b border-slate-50 px-4 py-2.5 text-left text-sm hover:bg-blue-50 transition">
                                             <span className="font-bold text-slate-800">{t.termSem} {t.termID === activeTerm && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[9px] uppercase text-blue-700">Active</span>}</span>
                                             <span className="text-xs text-slate-400">AY {t.termSY}</span>
@@ -112,7 +112,7 @@ export default function Reports() {
                         </div>
                         <div className="flex-1 min-w-[100px]">
                             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Year</label>
-                            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-700 transition-colors"><option value="All">All Years</option>{[1, 2, 3, 4, 5, 6].map(y => <option key={y} value={y.toString()}>Year {y}</option>)}</select>
+                            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-700 transition-colors"><option value="All">All Years</option>{[1, 2, 3, 4].map(y => <option key={y} value={y.toString()}>Year {y}</option>)}</select>
                         </div>
                         {activeUser?.userType !== 'Faculty' && (
                             <div className="shrink-0 w-full sm:w-auto">
@@ -146,49 +146,49 @@ export default function Reports() {
             <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none transition-colors">
                 <table className="w-full text-left text-sm text-slate-600">
                     <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-500 print:border-b-2 print:border-slate-800 print:bg-white print:text-slate-800">
-                    <tr>
-                        <th className="px-5 py-4 font-bold">Student</th>
-                        <th className="px-5 py-4 text-center font-bold">Program & Yr</th>
-                        <th className="px-5 py-4 text-center font-bold">TQPA</th>
-                        <th className="px-5 py-4 text-center font-bold">CQPA</th>
-                        <th className="px-5 py-4 text-right font-bold">Academic Status</th>
-                    </tr>
+                        <tr>
+                            <th className="px-5 py-4 font-bold">Student</th>
+                            <th className="px-5 py-4 text-center font-bold">Program & Yr</th>
+                            <th className="px-5 py-4 text-center font-bold">TQPA</th>
+                            <th className="px-5 py-4 text-center font-bold">CQPA</th>
+                            <th className="px-5 py-4 text-right font-bold">Academic Status</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 print:divide-slate-300">
-                    {reportData.map(record => {
-                        let status = record.termAcademicStatus as string;
-                        if (status.toUpperCase() === 'ADVISED-TO-SHIFT') status = 'Advised to Shift';
-                        if (status.toUpperCase() === 'ON-PROBATION') status = 'On-Probation';
-                        if (status.toUpperCase() === 'REGULAR') status = 'Regular';
-                        if (status.toUpperCase() === 'UNENCODED') status = 'Unencoded';
-                        return (
-                            <tr
-                                key={record.standingID}
-                                onClick={() => { setFocusedStudentID(record.student.studentID); setActiveView("evaluator"); }}
-                                className="cursor-pointer transition hover:bg-slate-50 print:hover:bg-white"
-                                title="Click to view student profile"
-                            >
-                                <td className="px-5 py-3">
-                                    <div className="font-bold text-slate-800 print:text-black">
-                                        {record.student?.studLastName}, {record.student?.studFirstName}
-                                        {record.student?.accountStatus !== 'Active' && <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 print:hidden">{record.student?.accountStatus.toUpperCase()}</span>}
-                                    </div>
-                                    <div className="font-mono text-xs text-slate-500">{record.student?.studentID}</div>
-                                </td>
-                                <td className="px-5 py-3 text-center">
-                                    <div className="font-semibold text-slate-700 print:text-black">{record.student?.programCode}</div>
-                                    <div className="text-xs text-slate-500">Year {calcYearLevel(record)}</div>
-                                </td>
-                                <td className="px-5 py-3 text-center font-mono">{record.termQPA.toFixed(2)}</td>
-                                <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 print:text-black">{record.semCQPA.toFixed(2)}</td>
-                                <td className="px-5 py-3 text-right">
-                                    <span className={`print:hidden inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${status === 'Advised to Shift' ? 'bg-coral-tint text-coral' : status === 'On-Probation' ? 'bg-amber-tint text-amber' : status === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>{status}</span>
-                                    <span className="hidden text-xs font-bold uppercase print:inline">{status}</span>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                    {reportData.length === 0 && !isLoading && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No records match the current filter criteria for the selected term.</td></tr>}
+                        {reportData.map(record => {
+                            let status = record.termAcademicStatus as string;
+                            if (status.toUpperCase() === 'ADVISED-TO-SHIFT') status = 'Advised to Shift';
+                            if (status.toUpperCase() === 'ON-PROBATION') status = 'On-Probation';
+                            if (status.toUpperCase() === 'REGULAR') status = 'Regular';
+                            if (status.toUpperCase() === 'UNENCODED') status = 'Unencoded';
+                            return (
+                                <tr
+                                    key={record.standingID}
+                                    onClick={() => { setFocusedStudentID(record.student.studentID); setActiveView("evaluator"); }}
+                                    className="cursor-pointer transition hover:bg-slate-50 print:hover:bg-white"
+                                    title="Click to view student profile"
+                                >
+                                    <td className="px-5 py-3">
+                                        <div className="font-bold text-slate-800 print:text-black">
+                                            {record.student?.studLastName}, {record.student?.studFirstName}
+                                            {record.student?.accountStatus !== 'Active' && <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 print:hidden">{record.student?.accountStatus.toUpperCase()}</span>}
+                                        </div>
+                                        <div className="font-mono text-xs text-slate-500">{record.student?.studentID}</div>
+                                    </td>
+                                    <td className="px-5 py-3 text-center">
+                                        <div className="font-semibold text-slate-700 print:text-black">{record.student?.programCode}</div>
+                                        <div className="text-xs text-slate-500">Year {calcYearLevel(record)}</div>
+                                    </td>
+                                    <td className="px-5 py-3 text-center font-mono">{record.termQPA.toFixed(2)}</td>
+                                    <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 print:text-black">{record.semCQPA.toFixed(2)}</td>
+                                    <td className="px-5 py-3 text-right">
+                                        <span className={`print:hidden inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${status === 'Advised to Shift' ? 'bg-coral-tint text-coral' : status === 'On-Probation' ? 'bg-amber-tint text-amber' : status === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>{status}</span>
+                                        <span className="hidden text-xs font-bold uppercase print:inline">{status}</span>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {reportData.length === 0 && !isLoading && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No records match the current filter criteria for the selected term.</td></tr>}
                     </tbody>
                 </table>
             </div>
