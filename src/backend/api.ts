@@ -79,15 +79,31 @@ const cascadeStandings = (
         };
         const dynamicMax = getDynamicMaxYear(student.programCode);
 
-        let evaluatedYearLevel = existingStanding?.yearLevel;
-        if (!evaluatedYearLevel) {
-            if (activeTermObj.isCurrent) {
-                evaluatedYearLevel = student.yearLevel;
+        const getFallbackYearLevel = () => {
+            const curriculumMajors = programCourses.filter(pc => pc.programCode === student.programCode && pc.majorMinorClassif === 'Major');
+            const unpassedMajors = curriculumMajors.filter(pc => {
+                const hasPassed = rawHistRecords.some(r => {
+                    if (r.programCourseID !== pc.programCourseID) return false;
+                    if (r.finalGrade === null || r.isFailed) return false;
+                    const passMark = cohortPolicy ? cohortPolicy.majorPassingGrade : 2.0;
+                    return r.finalGrade >= passMark;
+                });
+                return !hasPassed;
+            });
+            
+            if (unpassedMajors.length > 0 && rawHistRecords.length > 0) {
+                const unpassedYearLevels = unpassedMajors.map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
+                return Math.min(dynamicMax, Math.min(...unpassedYearLevels));
             } else {
                 const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
                 const calculatedChronologicalYear = Math.max(1, termStartYear - student.yearEnrolled + 1);
-                evaluatedYearLevel = Math.min(dynamicMax, calculatedChronologicalYear);
+                return Math.min(dynamicMax, calculatedChronologicalYear);
             }
+        };
+
+        let evaluatedYearLevel = existingStanding?.yearLevel;
+        if (!evaluatedYearLevel) {
+            evaluatedYearLevel = getFallbackYearLevel();
         }
         if (!skipYearLevelAutoCalc && activeTerm === modifiedTermID) {
             const majorYearLevels = termRecords
@@ -97,9 +113,7 @@ const cascadeStandings = (
             if (majorYearLevels.length > 0) {
                 evaluatedYearLevel = Math.min(...majorYearLevels);
             } else {
-                const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
-                const calculatedChronologicalYear = Math.max(1, termStartYear - student.yearEnrolled + 1);
-                evaluatedYearLevel = Math.min(dynamicMax, calculatedChronologicalYear);
+                evaluatedYearLevel = getFallbackYearLevel();
             }
         }
 
@@ -644,7 +658,8 @@ export const backendAPI = {
     async generateAutoPopulateRecords(
         student: EnrichedStudent, activeTerm: string, termDetails: ACADEMIC_TERM,
         programCourses: PROGRAM_COURSE[], records: ACADEMIC_RECORD[], userID: string,
-        globalActiveTerm: string, standings: TERM_STANDING[], retentionPolicies: RETENTION_POLICY[] = []
+        globalActiveTerm: string, standings: TERM_STANDING[], retentionPolicies: RETENTION_POLICY[] = [],
+        terms: ACADEMIC_TERM[] = []
     ) {
         const getDynamicMaxYear = (progCode: string) => {
             const progYearLevels = programCourses.filter(pc => pc.programCode === progCode).map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
@@ -658,9 +673,32 @@ export const backendAPI = {
             if (exist && exist.yearLevel) {
                 targetYearLevel = exist.yearLevel;
             } else {
-                const termStartYear = parseInt(termDetails.termSY.split('-')[0]);
-                const chronologicalYearLevel = Math.max(1, termStartYear - student.yearEnrolled + 1);
-                targetYearLevel = Math.min(dynamicMax, chronologicalYearLevel);
+                const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
+                const rawHistRecords = records.filter(r => {
+                    if (r.studentID !== student.studentID) return false;
+                    const rTerm = terms.find(t => t.termID === r.termID);
+                    return rTerm && compareTerms(rTerm, termDetails) <= 0;
+                });
+                
+                const curriculumMajors = programCourses.filter(pc => pc.programCode === student.programCode && pc.majorMinorClassif === 'Major');
+                const unpassedMajors = curriculumMajors.filter(pc => {
+                    const hasPassed = rawHistRecords.some(r => {
+                        if (r.programCourseID !== pc.programCourseID) return false;
+                        if (r.finalGrade === null || r.isFailed) return false;
+                        const passMark = cohortPolicy ? cohortPolicy.majorPassingGrade : 2.0;
+                        return r.finalGrade >= passMark;
+                    });
+                    return !hasPassed;
+                });
+                
+                if (unpassedMajors.length > 0 && rawHistRecords.length > 0) {
+                    const unpassedYearLevels = unpassedMajors.map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
+                    targetYearLevel = Math.min(dynamicMax, Math.min(...unpassedYearLevels));
+                } else {
+                    const termStartYear = parseInt(termDetails.termSY.split('-')[0]);
+                    const chronologicalYearLevel = Math.max(1, termStartYear - student.yearEnrolled + 1);
+                    targetYearLevel = Math.min(dynamicMax, chronologicalYearLevel);
+                }
             }
         }
 

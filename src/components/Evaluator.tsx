@@ -215,7 +215,7 @@ export default function Evaluator() {
         if (!activeUser || !selectedStudent || !localTermDetails) return;
         setIsLoading(true);
         const { data: newRecords, newStanding, updatedStudentYearLevel, error } = await backendAPI.generateAutoPopulateRecords(
-            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies
+            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies, terms
         );
         if (error) {
             alert(error);

@@ -1,5 +1,5 @@
 // src/components/Settings.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useStore } from "../store/store";
 import { backendAPI } from "../backend/api";
 import type { ACADEMIC_TERM, SYSTEM_SETTINGS, RETENTION_POLICY } from "../store/types";
@@ -34,6 +34,20 @@ export default function Settings() {
 
     const activeTermObj = terms.find(t => t.termID === activeTerm);
     const activeTermYear = activeTermObj ? parseInt(activeTermObj.termSY.split('-')[0]) : 0;
+
+    const [showTermDropdown, setShowTermDropdown] = useState(false);
+    const [termSearchQuery, setTermSearchQuery] = useState("");
+    const termDropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (termDropdownRef.current && !termDropdownRef.current.contains(event.target as Node)) {
+                setShowTermDropdown(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     useEffect(() => {
         if (pendingSettingsTab) {
@@ -298,9 +312,33 @@ export default function Settings() {
                                     <form onSubmit={handleSystemSave} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50 p-5 transition-colors">
                                         <label className="mb-1.5 block text-sm font-bold text-slate-800">Active Academic Term</label>
                                         <p className="mb-4 text-xs text-slate-500">Sets the default term context for the Student Evaluator and Reports generation.</p>
-                                        <select value={activeTerm} onChange={(e) => setActiveTerm(e.target.value)} disabled={isSaving} className="w-full rounded-md border border-slate-300 bg-white p-2.5 text-sm font-semibold outline-none focus:border-blue-700 disabled:opacity-50 transition-colors">
-                                            {terms.map(t => <option key={t.termID} value={t.termID}>{t.termSem}, AY {t.termSY} {t.isCurrent ? "(Current)" : ""}</option>)}
-                                        </select>
+                                        <div className="relative" ref={termDropdownRef}>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowTermDropdown(!showTermDropdown); setTermSearchQuery(""); }}
+                                                disabled={isSaving}
+                                                className="w-full flex items-center justify-between rounded-md border border-slate-300 bg-white p-2.5 text-sm font-semibold outline-none transition-colors hover:border-blue-700 disabled:opacity-50"
+                                            >
+                                                <span className="truncate">{activeTermObj ? `${activeTermObj.termSem}, AY ${activeTermObj.termSY} ${activeTermObj.isCurrent ? "(Current)" : ""}` : "Select Term..."}</span>
+                                                <svg className="h-4 w-4 opacity-50 shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                            </button>
+                                            {showTermDropdown && (
+                                                <div className="absolute left-0 top-full z-20 mt-1 max-h-[250px] w-full min-w-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                                                    <div className="sticky top-0 z-10 bg-slate-100 shadow-sm">
+                                                        <input type="text" autoFocus value={termSearchQuery} onChange={e => setTermSearchQuery(e.target.value)} placeholder="Search semester or AY..." className="w-full border-b border-slate-200 bg-transparent px-4 py-2.5 text-xs text-slate-700 outline-none" onClick={e => e.stopPropagation()} />
+                                                    </div>
+                                                    {terms.filter(t => `${t.termSem} ${t.termSY}`.toLowerCase().includes(termSearchQuery.toLowerCase())).sort((a, b) => b.termSY.localeCompare(a.termSY) || b.termSem.localeCompare(a.termSem)).map(t => (
+                                                        <button type="button" key={t.termID} onClick={() => { setActiveTerm(t.termID); setShowTermDropdown(false); setTermSearchQuery(""); }} className="flex w-full items-center justify-between border-b border-slate-50 px-4 py-2.5 text-left text-sm hover:bg-blue-50 transition">
+                                                            <span className="font-bold text-slate-800">{t.termSem} {t.isCurrent && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[9px] uppercase text-blue-700">Current</span>}</span>
+                                                            <span className="text-xs text-slate-400">AY {t.termSY}</span>
+                                                        </button>
+                                                    ))}
+                                                    {terms.filter(t => `${t.termSem} ${t.termSY}`.toLowerCase().includes(termSearchQuery.toLowerCase())).length === 0 && (
+                                                        <div className="px-4 py-3 text-center text-xs text-slate-500">No terms match your search.</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                                             {activeTermObj ? (
                                                 <button type="button" onClick={openEditPolicy} disabled={isSaving} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-50">
