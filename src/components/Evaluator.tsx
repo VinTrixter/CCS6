@@ -11,16 +11,19 @@ type AdvisingCategory = "General Note" | "Guidance Referral" | "Policy Warning" 
 
 const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, onSave: (val: string) => Promise<boolean>, disabled: boolean }) => {
     const [val, setVal] = useState(initialValue);
+    const [isSaving, setIsSaving] = useState(false);
     useEffect(() => {
         setVal(initialValue);
     }, [initialValue]);
 
     const handleBlur = async () => {
         if (val !== initialValue) {
+            setIsSaving(true);
             const success = await onSave(val);
             if (!success) {
                 setVal(initialValue);
             }
+            setIsSaving(false);
         }
     };
 
@@ -29,16 +32,23 @@ const GradeInput = ({ initialValue, onSave, disabled }: { initialValue: string, 
     };
 
     return (
-        <input
-            type="text"
-            disabled={disabled}
-            value={val}
-            onChange={e => setVal(e.target.value)}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            placeholder="-"
-            className="w-20 rounded-md border border-slate-300 bg-white px-3 py-1.5 font-mono text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-        />
+        <div className="relative inline-flex items-center">
+            <input
+                type="text"
+                disabled={disabled || isSaving}
+                value={val}
+                onChange={e => setVal(e.target.value)}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+                placeholder="-"
+                className="w-20 rounded-md border border-slate-300 bg-white px-3 py-1.5 font-mono text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-700 disabled:opacity-60 disabled:cursor-not-allowed pr-8"
+            />
+            {isSaving && (
+                <div className="absolute right-2 text-blue-600 animate-spin">
+                    <I.Loader className="h-4 w-4" />
+                </div>
+            )}
+        </div>
     );
 };
 
