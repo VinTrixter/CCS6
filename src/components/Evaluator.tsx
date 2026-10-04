@@ -94,6 +94,7 @@ export default function Evaluator() {
     const [displayRows, setDisplayRows] = useState<EnrichedGradeRow[]>([]);
     const [progressStats, setProgressStats] = useState({ completed: [] as PROGRAM_COURSE[], enrolled: [] as PROGRAM_COURSE[], remaining: [] as PROGRAM_COURSE[] });
     const [isLoading, setIsLoading] = useState(false);
+    const isProcessingRef = useRef(false);
     const [localTerm, setLocalTerm] = useState<string>(() => sessionStorage.getItem('compass_evaluatorLocalTerm') || activeTerm);
     useEffect(() => {
         if (localTerm) sessionStorage.setItem('compass_evaluatorLocalTerm', localTerm);
@@ -159,6 +160,20 @@ export default function Evaluator() {
         const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
         return semWeights[b.termSem] - semWeights[a.termSem];
     });
+    let displayCQPA = termStanding?.semCQPA || 0;
+    if (displayCQPA === 0 && selectedStudent?.accountStatus === 'Active') {
+        const localTermIndex = availableTerms.findIndex(t => t.termID === localTerm);
+        if (localTermIndex >= 0) {
+            for (let i = localTermIndex + 1; i < availableTerms.length; i++) {
+                const pt = availableTerms[i];
+                const ts = historyStandings.find(s => s.termID === pt.termID);
+                if (ts && ts.semCQPA > 0) {
+                    displayCQPA = ts.semCQPA;
+                    break;
+                }
+            }
+        }
+    }
 
 
     useEffect(() => {
@@ -212,7 +227,8 @@ export default function Evaluator() {
     };
 
     const handleAutoPopulate = async () => {
-        if (!activeUser || !selectedStudent || !localTermDetails) return;
+        if (!activeUser || !selectedStudent || !localTermDetails || isProcessingRef.current) return;
+        isProcessingRef.current = true;
         setIsLoading(true);
         const { data: newRecords, newStanding, updatedStudentYearLevel, error } = await backendAPI.generateAutoPopulateRecords(
             selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies, terms
@@ -232,10 +248,13 @@ export default function Evaluator() {
             pushAudit(`AUTO_POPULATED_GRADES_${localTerm}`, selectedStudent.studentID);
         }
         setIsLoading(false);
+        isProcessingRef.current = false;
     };
 
     const handleAddExtraCourse = async (courseCode: string) => {
-        if (!activeUser || !selectedStudent) return;
+        if (!activeUser || !selectedStudent || isProcessingRef.current) return;
+        isProcessingRef.current = true;
+        setIsLoading(true);
 
         // PHASE 3 FIX: Intercept manual additions if the subject was previously dismissed as a ghost row.
         // This instantly brings the ghost row back to the UI without saving a blank database row.
@@ -246,6 +265,8 @@ export default function Evaluator() {
             });
             setShowExtraCourseDropdown(false);
             setCourseSearch("");
+            setIsLoading(false);
+            isProcessingRef.current = false;
             return;
         }
 
@@ -265,6 +286,8 @@ export default function Evaluator() {
         pushAudit(`ADDED_SUBJECT_${localTerm}`, selectedStudent.studentID);
         setShowExtraCourseDropdown(false);
         setCourseSearch("");
+        setIsLoading(false);
+        isProcessingRef.current = false;
     };
 
     const handleGradeChange = async (code: string, val: string, recordID?: string): Promise<boolean> => {
@@ -322,11 +345,15 @@ export default function Evaluator() {
 
     const handleCreateStudent = async (e: React.SyntheticEvent) => {
         e.preventDefault();
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
         const cleanID = formData.studentID.replace(/\D/g, '');
         if (cleanID.length < 7) {
+            isProcessingRef.current = false;
             return alert("Invalid Student ID format. It must contain at least 7 digits (e.g., XX-X-XXXX).");
         }
         if (students.some(s => s.studentID === formData.studentID)) {
+            isProcessingRef.current = false;
             return alert("A student with this ID already exists in the system.");
         }
 
@@ -334,13 +361,16 @@ export default function Evaluator() {
         const lastName = formData.lastName.trim();
         const middleName = formData.middleName.trim();
         if (!firstName || !lastName) {
+            isProcessingRef.current = false;
             return alert("Names cannot be empty or just spaces.");
         }
         const nameRegex = /^[A-Za-z\s\- ]+$/;
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+            isProcessingRef.current = false;
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
         if (middleName && !nameRegex.test(middleName)) {
+            isProcessingRef.current = false;
             return alert("Middle name must only contain letters, spaces, and hyphens.");
         }
 
@@ -351,7 +381,10 @@ export default function Evaluator() {
         };
 
         const { data, error } = await backendAPI.createStudent(newStudent, students);
-        if (error) return alert(error);
+        if (error) {
+            isProcessingRef.current = false;
+            return alert(error);
+        }
         if (data) setStudents(data);
 
         pushAudit("CREATED_STUDENT_RECORD", formData.studentID);
@@ -364,22 +397,27 @@ export default function Evaluator() {
 
         setSearchQuery(""); setActiveTab("grades"); setLeftMode("search");
         setFormData({ studentID: "", firstName: "", middleName: "", lastName: "", shsTrack: "STEM", programCode: "", yearLevel: "", yearEnrolled: currentYearStr });
+        isProcessingRef.current = false;
     };
 
     const handleUpdateProfile = async () => {
-        if (!editFormData) return;
+        if (!editFormData || isProcessingRef.current) return;
+        isProcessingRef.current = true;
         const firstName = editFormData.studFirstName.trim();
         const lastName = editFormData.studLastName.trim();
         const middleName = editFormData.studMiddleName?.trim() || "";
 
         if (!firstName || !lastName) {
+            isProcessingRef.current = false;
             return alert("Names cannot be empty or just spaces.");
         }
         const nameRegex = /^[A-Za-z\s\- ]+$/;
         if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+            isProcessingRef.current = false;
             return alert("Names must only contain letters, spaces, and hyphens.");
         }
         if (middleName && !nameRegex.test(middleName)) {
+            isProcessingRef.current = false;
             return alert("Middle name must only contain letters, spaces, and hyphens.");
         }
 
@@ -391,21 +429,29 @@ export default function Evaluator() {
         };
 
         const { data, standingsData, error } = await backendAPI.updateStudent(updatedStudent, students, activeTerm, standings);
-        if (error) return alert(error);
+        if (error) {
+            isProcessingRef.current = false;
+            return alert(error);
+        }
         if (data) setStudents(data);
         if (standingsData) setStandings(standingsData);
 
         setSelectedStudent(updatedStudent);
         pushAudit("UPDATED_STUDENT_RECORD", updatedStudent.studentID);
         setIsEditingProfile(false);
+        isProcessingRef.current = false;
     };
 
     const handleDeleteStudent = async () => {
-        if (!selectedStudent) return;
+        if (!selectedStudent || isProcessingRef.current) return;
         if (!window.confirm(`Are you sure you want to PERMANENTLY delete the record for ${selectedStudent.studFirstName} ${selectedStudent.studLastName}?`)) return;
-
+        
+        isProcessingRef.current = true;
         const { data, error } = await backendAPI.deleteStudent(selectedStudent.studentID, students, records, standings, remarks);
-        if (error) return alert(error);
+        if (error) {
+            isProcessingRef.current = false;
+            return alert(error);
+        }
         if (data) {
             setStudents(data.students);
             setRecords(data.records);
@@ -416,6 +462,7 @@ export default function Evaluator() {
         setSelectedStudent(null);
         setIsEditingProfile(false);
         setLeftMode("search");
+        isProcessingRef.current = false;
     };
 
     const handleSaveRemark = async (e: React.SyntheticEvent) => {
@@ -531,15 +578,15 @@ export default function Evaluator() {
                                     <div className="px-5 pb-5">
                                         <div className="relative -mt-8 mb-3 flex h-16 w-16 items-center justify-center rounded-xl border-4 border-white bg-slate-800 text-xl font-bold text-white shadow-sm">{selectedStudent.studFirstName.charAt(0)}</div>
 
-                                        <div className="flex items-start justify-between">
+                                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                                             <div className="flex flex-col">
-                                                <div className="flex items-center gap-3">
-                                                    <h2 className="text-xl font-bold text-slate-800">{selectedStudent.studLastName}, {selectedStudent.studFirstName}</h2>
-                                                    {can('manage_records') && !isEditingProfile && (<button onClick={() => { setEditFormData(selectedStudent); setIsEditingProfile(true); }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-sm hover:text-blue-700 transition-colors">Edit Profile</button>)}
-                                                </div>
-                                                <div className="font-mono text-sm text-slate-500">{selectedStudent.studentID}</div>
+                                                <h2 className="text-xl font-bold text-slate-800">{selectedStudent.studLastName}, {selectedStudent.studFirstName}</h2>
+                                                <div className="font-mono text-sm text-slate-500 mt-1">{selectedStudent.studentID}</div>
                                             </div>
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${currentStatus === 'Advised to Shift' ? 'bg-coral text-white' : currentStatus === 'On-Probation' ? 'bg-amber text-white' : currentStatus === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-700 text-white'}`}>{currentStatus}</span>
+                                            <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${currentStatus === 'Advised to Shift' ? 'bg-coral text-white' : currentStatus === 'On-Probation' ? 'bg-amber text-white' : currentStatus === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-700 text-white'}`}>{currentStatus}</span>
+                                                {can('manage_records') && !isEditingProfile && (<button onClick={() => { setEditFormData(selectedStudent); setIsEditingProfile(true); }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-sm hover:text-blue-700 transition-colors">Edit Profile</button>)}
+                                            </div>
                                         </div>
 
                                         {isEditingProfile && editFormData ? (
@@ -575,7 +622,7 @@ export default function Evaluator() {
                                                 </div>
                                                 <div className="flex-1 min-w-fit lg:col-span-4">
                                                     <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">CQPA</div>
-                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{termStanding?.semCQPA?.toFixed(2) || "0.00"}</div>
+                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{displayCQPA.toFixed(2)}</div>
                                                 </div>
                                                 <div className="flex-1 min-w-[100px] lg:col-span-4">
                                                     <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">Account</div>

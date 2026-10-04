@@ -1,5 +1,5 @@
 // src/components/Curriculum.tsx
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useStore } from "../store/store";
 import type { COURSE_PREREQUISITE, DEGREE_PROGRAM, PROGRAM_COURSE } from "../store/types";
 import { backendAPI } from "../backend/api";
@@ -121,6 +121,7 @@ export default function Curriculum() {
 
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedProgram, setSelectedProgram] = useState<DEGREE_PROGRAM | null>(null);
+    const isProcessingRef = useRef(false);
 
     const [showProgramForm, setShowProgramForm] = useState(false);
     const [editingProgCode, setEditingProgCode] = useState<string | null>(null);
@@ -197,13 +198,17 @@ export default function Curriculum() {
 
     const handleSaveProgram = async (e: React.SyntheticEvent) => {
         e.preventDefault();
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
 
         if (!/^\d{4}-\d{4}$/.test(progForm.year)) {
+            isProcessingRef.current = false;
             return alert("Invalid School Year format. Please use YYYY-YYYY (e.g., 2024-2025).");
         }
 
         const [startYear, endYear] = progForm.year.split('-').map(Number);
         if (endYear - startYear !== 1) {
+            isProcessingRef.current = false;
             return alert("Invalid School Year. The end year must be exactly one year after the start year (e.g., 2024-2025).");
         }
 
@@ -211,6 +216,7 @@ export default function Curriculum() {
         const trimmedTitle = progForm.title.trim();
 
         if (!trimmedCode || !trimmedTitle) {
+            isProcessingRef.current = false;
             return alert("Program code and title are required.");
         }
 
@@ -222,13 +228,17 @@ export default function Curriculum() {
 
         const { data, error } = await backendAPI.saveProgram(newProg, editingProgCode, programs);
 
-        if (error) return alert(error);
+        if (error) {
+            isProcessingRef.current = false;
+            return alert(error);
+        }
 
         if (data) setPrograms(data);
 
         pushAudit(editingProgCode ? "UPDATED_CURRICULUM" : "CREATED_CURRICULUM", newProg.programCode);
         setShowProgramForm(false);
         setSelectedProgram(newProg);
+        isProcessingRef.current = false;
     };
 
     const handleDeleteProgram = async () => {
@@ -265,14 +275,17 @@ export default function Curriculum() {
 
     const handleSaveCourse = async (e: React.SyntheticEvent) => {
         e.preventDefault();
-        if (!selectedProgram) return;
+        if (!selectedProgram || isProcessingRef.current) return;
+        isProcessingRef.current = true;
 
         if (courseForm.semester === "" || courseForm.classification === "") {
+            isProcessingRef.current = false;
             return alert("Please select a valid semester and classification.");
         }
 
         const unitsNum = Number(courseForm.units);
         if (isNaN(unitsNum) || unitsNum < 0) {
+            isProcessingRef.current = false;
             return alert("Course units cannot be negative. Use 0 for non-credited subjects (e.g., PEP).");
         }
 
@@ -284,6 +297,7 @@ export default function Curriculum() {
         );
 
         if (isDuplicate) {
+            isProcessingRef.current = false;
             return alert(`Course code '${courseForm.courseCode}' already exists in this curriculum.`);
         }
 
@@ -297,7 +311,10 @@ export default function Curriculum() {
             strictPayload, selectedProgram, editingCourseCode, courses, programCourses, coursePrerequisites
         );
 
-        if (error) return alert(error);
+        if (error) {
+            isProcessingRef.current = false;
+            return alert(error);
+        }
 
         if (coursesData) setCourses(coursesData);
         if (programCoursesData) setProgramCourses(programCoursesData);
@@ -308,6 +325,7 @@ export default function Curriculum() {
         else pushAudit("ADDED_COURSE_TO_CURRICULUM", `${selectedProgram.programCode} ->${code}`);
 
         setShowCourseForm(false);
+        isProcessingRef.current = false;
     };
 
     const handleDeleteCourse = async (courseCode: string) => {

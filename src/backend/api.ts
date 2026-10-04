@@ -82,21 +82,42 @@ const cascadeStandings = (
         const getFallbackYearLevel = () => {
             const curriculumMajors = programCourses.filter(pc => pc.programCode === student.programCode && pc.majorMinorClassif === 'Major');
             const unpassedMajors = curriculumMajors.filter(pc => {
-                const hasPassed = rawHistRecords.some(r => {
-                    if (r.programCourseID !== pc.programCourseID) return false;
-                    if (r.finalGrade === null || r.isFailed) return false;
-                    const passMark = cohortPolicy ? cohortPolicy.majorPassingGrade : 2.0;
-                    return r.finalGrade >= passMark;
-                });
-                return !hasPassed;
+                const attempts = rawHistRecords.filter(r => r.programCourseID === pc.programCourseID);
+                if (attempts.length === 0) return false;
+                
+                const passMark = cohortPolicy ? cohortPolicy.majorPassingGrade : 2.0;
+                const hasFailed = attempts.some(r => r.isFailed || (r.finalGrade !== null && r.finalGrade < passMark));
+                const hasPassed = attempts.some(r => r.finalGrade !== null && r.finalGrade >= passMark && !r.isFailed);
+                
+                return hasFailed && !hasPassed;
             });
             
-            if (unpassedMajors.length > 0 && rawHistRecords.length > 0) {
+            if (unpassedMajors.length > 0) {
                 const unpassedYearLevels = unpassedMajors.map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
                 return Math.min(dynamicMax, Math.min(...unpassedYearLevels));
             } else {
+                let effectiveYearEnrolled = student.yearEnrolled;
+                const studentStandings = currentStandings.filter(s => s.studentID === student.studentID);
+                if (studentStandings.length > 0) {
+                    const earliestStanding = studentStandings.sort((a, b) => {
+                        const tA = terms.find(t => t.termID === a.termID);
+                        const tB = terms.find(t => t.termID === b.termID);
+                        if (!tA || !tB) return 0;
+                        return parseInt(tA.termSY.split('-')[0]) - parseInt(tB.termSY.split('-')[0]);
+                    })[0];
+                    if (earliestStanding && earliestStanding.yearLevel) {
+                        const earliestTerm = terms.find(t => t.termID === earliestStanding.termID);
+                        if (earliestTerm) {
+                            effectiveYearEnrolled = parseInt(earliestTerm.termSY.split('-')[0]) - earliestStanding.yearLevel + 1;
+                        }
+                    }
+                } else {
+                    effectiveYearEnrolled = student.yearEnrolled - student.yearLevel + 1;
+                }
+                
                 const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
-                const calculatedChronologicalYear = Math.max(1, termStartYear - student.yearEnrolled + 1);
+                const calculatedChronologicalYear = Math.max(1, termStartYear - effectiveYearEnrolled + 1);
+                
                 return Math.min(dynamicMax, calculatedChronologicalYear);
             }
         };
@@ -385,17 +406,17 @@ export const backendAPI = {
 
     async fetchInitialSystemData() {
         const [stuRes, spRes, progRes, courRes, pcRes, recRes, remRes, standRes, termRes, preRes, polRes, logRes, sysRes] = await Promise.all([
-            supabase.from('STUDENT').select('*'),
-            supabase.from('STUDENT_PROGRAM').select('*'),
+            supabase.from('STUDENT').select('*').limit(10000),
+            supabase.from('STUDENT_PROGRAM').select('*').limit(10000),
             supabase.from('DEGREE_PROGRAM').select('*'),
-            supabase.from('COURSE').select('*'),
-            supabase.from('PROGRAM_COURSE').select('*'),
-            supabase.from('ACADEMIC_RECORD').select('*'),
-            supabase.from('ADVISING_REMARK').select('*, COMPASS_USER(userFirstName, userLastName)'),
-            supabase.from('TERM_STANDING').select('*'),
+            supabase.from('COURSE').select('*').limit(10000),
+            supabase.from('PROGRAM_COURSE').select('*').limit(10000),
+            supabase.from('ACADEMIC_RECORD').select('*').limit(10000),
+            supabase.from('ADVISING_REMARK').select('*, COMPASS_USER(userFirstName, userLastName)').limit(10000),
+            supabase.from('TERM_STANDING').select('*').limit(10000),
             supabase.from('ACADEMIC_TERM').select('*'),
-            supabase.from('COURSE_PREREQUISITE').select('*'),
-            supabase.from('RETENTION_POLICY').select('*'),
+            supabase.from('COURSE_PREREQUISITE').select('*').limit(10000),
+            supabase.from('RETENTION_POLICY').select('*').limit(10000),
             supabase.from('AUDIT_LOG').select('*').order('timestamp', { ascending: false }).limit(200),
             supabase.from('SYSTEM_SETTINGS').select('*')
         ]);
@@ -668,11 +689,10 @@ export const backendAPI = {
         const dynamicMax = getDynamicMaxYear(student.programCode);
 
         let targetYearLevel = student.yearLevel;
-        if (!termDetails.isCurrent) {
-            const exist = standings.find(s => s.studentID === student.studentID && s.termID === activeTerm);
-            if (exist && exist.yearLevel) {
-                targetYearLevel = exist.yearLevel;
-            } else {
+        const exist = standings.find(s => s.studentID === student.studentID && s.termID === activeTerm);
+        if (exist && exist.yearLevel) {
+            targetYearLevel = exist.yearLevel;
+        } else {
                 const cohortPolicy = retentionPolicies.find(p => p.programCode === student.programCode && p.effectiveYear === student.yearEnrolled);
                 const rawHistRecords = records.filter(r => {
                     if (r.studentID !== student.studentID) return false;
@@ -682,25 +702,44 @@ export const backendAPI = {
                 
                 const curriculumMajors = programCourses.filter(pc => pc.programCode === student.programCode && pc.majorMinorClassif === 'Major');
                 const unpassedMajors = curriculumMajors.filter(pc => {
-                    const hasPassed = rawHistRecords.some(r => {
-                        if (r.programCourseID !== pc.programCourseID) return false;
-                        if (r.finalGrade === null || r.isFailed) return false;
-                        const passMark = cohortPolicy ? cohortPolicy.majorPassingGrade : 2.0;
-                        return r.finalGrade >= passMark;
-                    });
-                    return !hasPassed;
+                    const attempts = rawHistRecords.filter(r => r.programCourseID === pc.programCourseID);
+                    if (attempts.length === 0) return false;
+                    
+                    const passMark = cohortPolicy ? cohortPolicy.majorPassingGrade : 2.0;
+                    const hasFailed = attempts.some(r => r.isFailed || (r.finalGrade !== null && r.finalGrade < passMark));
+                    const hasPassed = attempts.some(r => r.finalGrade !== null && r.finalGrade >= passMark && !r.isFailed);
+                    
+                    return hasFailed && !hasPassed;
                 });
                 
-                if (unpassedMajors.length > 0 && rawHistRecords.length > 0) {
+                if (unpassedMajors.length > 0) {
                     const unpassedYearLevels = unpassedMajors.map(pc => Number(pc.yearLevel) || Number((pc as any).yrLevel));
                     targetYearLevel = Math.min(dynamicMax, Math.min(...unpassedYearLevels));
                 } else {
+                    let effectiveYearEnrolled = student.yearEnrolled;
+                    const studentStandings = standings.filter(s => s.studentID === student.studentID);
+                    if (studentStandings.length > 0) {
+                        const earliestStanding = studentStandings.sort((a, b) => {
+                            const tA = terms.find(t => t.termID === a.termID);
+                            const tB = terms.find(t => t.termID === b.termID);
+                            if (!tA || !tB) return 0;
+                            return parseInt(tA.termSY.split('-')[0]) - parseInt(tB.termSY.split('-')[0]);
+                        })[0];
+                        if (earliestStanding && earliestStanding.yearLevel) {
+                            const earliestTerm = terms.find(t => t.termID === earliestStanding.termID);
+                            if (earliestTerm) {
+                                effectiveYearEnrolled = parseInt(earliestTerm.termSY.split('-')[0]) - earliestStanding.yearLevel + 1;
+                            }
+                        }
+                    } else {
+                        effectiveYearEnrolled = student.yearEnrolled - student.yearLevel + 1;
+                    }
+                    
                     const termStartYear = parseInt(termDetails.termSY.split('-')[0]);
-                    const chronologicalYearLevel = Math.max(1, termStartYear - student.yearEnrolled + 1);
+                    const chronologicalYearLevel = Math.max(1, termStartYear - effectiveYearEnrolled + 1);
                     targetYearLevel = Math.min(dynamicMax, chronologicalYearLevel);
                 }
             }
-        }
 
         const curriculum = programCourses.filter(pc => {
             const pcYear = Number(pc.yearLevel) || Number((pc as any).yrLevel);
