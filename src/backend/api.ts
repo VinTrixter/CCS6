@@ -142,12 +142,15 @@ const cascadeStandings = (
                 const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
                 const calculatedChronologicalYear = Math.max(1, termStartYear - effectiveYearEnrolled + 1);
 
-                // TARGETED FIX: Protect manual profile advancements for empty terms.
-                // If this is the latest active term, respect the global profile year level.
-                const hasFutureStandings = [...unaffectedStandings, ...newStandings].some(ts => {
+                // TARGETED FIX: Use the immutable pre-calculation snapshot to prevent processing queue blindness
+                const hasFutureStandings = currentStandings.some(ts => {
                     if (ts.studentID !== student.studentID) return false;
                     const tsTerm = terms.find(t => t.termID === ts.termID);
                     return tsTerm && compareTerms(tsTerm, activeTermObj) > 0;
+                }) || updatedRecords.some(r => {
+                    if (r.studentID !== student.studentID) return false;
+                    const rTerm = terms.find(t => t.termID === r.termID);
+                    return rTerm && compareTerms(rTerm, activeTermObj) > 0;
                 });
 
                 if (!hasFutureStandings && student.yearLevel > calculatedChronologicalYear) {
@@ -773,7 +776,8 @@ export const backendAPI = {
             };
 
             let updatedStudentYearLevel = undefined;
-            if (activeTerm === globalActiveTerm && calculatedYearLevel !== student.yearLevel) {
+            // TARGETED FIX: Protect global profile from auto-populate downgrades (upward-sync only)
+            if (activeTerm === globalActiveTerm && calculatedYearLevel > student.yearLevel) {
                 await supabase.from('STUDENT').update({ yearLevel: calculatedYearLevel }).eq('studentID', student.studentID);
                 updatedStudentYearLevel = calculatedYearLevel;
             }
@@ -891,7 +895,8 @@ export const backendAPI = {
         const currentTermObj = terms.find(t => t.isCurrent);
         if (currentTermObj && activeTerm === currentTermObj.termID) {
             const activeStanding = newStandings.find(ns => ns.termID === activeTerm);
-            if (activeStanding && activeStanding.yearLevel !== student.yearLevel) {
+            // TARGETED FIX: Added explicit undefined check for Vercel TS compiler and enforced upward-sync logic
+            if (activeStanding && activeStanding.yearLevel !== undefined && activeStanding.yearLevel > student.yearLevel) {
                 await supabase.from('STUDENT').update({ yearLevel: activeStanding.yearLevel }).eq('studentID', student.studentID);
                 syncedYearLevel = activeStanding.yearLevel;
             }

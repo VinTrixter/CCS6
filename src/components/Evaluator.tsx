@@ -226,7 +226,6 @@ export default function Evaluator() {
         if (localMajorYearLevels.length > 0) {
             const priority1YearLevel = Math.min(...localMajorYearLevels);
             if (termStanding.yearLevel === priority1YearLevel) {
-                // TARGETED FIX: Isolate global profile projection strictly to the latest active term to protect past terms and fix WSOD.
                 const hasFutureStandings = historyStandings.some(s => {
                     const t = terms.find(term => term.termID === s.termID);
                     if (!t || !localTermDetails) return false;
@@ -241,9 +240,11 @@ export default function Evaluator() {
                 });
 
                 if (!hasFutureStandings && selectedStudent.yearLevel > priority1YearLevel) {
+                    // Latest term: allow global profile projection
                     ghostRowYearLevel = Math.min(dynamicMaxYear, selectedStudent.yearLevel);
-                } else if (chronologicalYear > priority1YearLevel) {
-                    ghostRowYearLevel = Math.min(dynamicMaxYear, chronologicalYear);
+                } else {
+                    // TARGETED FIX: Past term: Strictly enforce the established local standing (Priority 1) over chronological math
+                    ghostRowYearLevel = priority1YearLevel;
                 }
             }
         }
