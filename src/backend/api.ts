@@ -142,7 +142,10 @@ const cascadeStandings = (
                 const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
                 const calculatedChronologicalYear = Math.max(1, termStartYear - effectiveYearEnrolled + 1);
 
-                // TARGETED FIX: Use the immutable pre-calculation snapshot to prevent processing queue blindness
+                // TARGETED FIX: Block global profile projection on historical terms
+                const globalActiveTermObj = terms.find(t => t.isCurrent);
+                const isPastRelativeToGlobal = globalActiveTermObj && compareTerms(activeTermObj, globalActiveTermObj) < 0;
+
                 const hasFutureStandings = currentStandings.some(ts => {
                     if (ts.studentID !== student.studentID) return false;
                     const tsTerm = terms.find(t => t.termID === ts.termID);
@@ -153,7 +156,7 @@ const cascadeStandings = (
                     return rTerm && compareTerms(rTerm, activeTermObj) > 0;
                 });
 
-                if (!hasFutureStandings && student.yearLevel > calculatedChronologicalYear) {
+                if (!isPastRelativeToGlobal && !hasFutureStandings && student.yearLevel > calculatedChronologicalYear) {
                     return Math.min(dynamicMax, student.yearLevel);
                 }
 

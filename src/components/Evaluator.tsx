@@ -213,7 +213,35 @@ export default function Evaluator() {
         }
         return Math.max(1, localStartYear - effectiveYearEnrolled + 1);
     })();
-    const displayYearLevel = termStanding?.yearLevel || Math.min(dynamicMaxYear, chronologicalYear);
+    // TARGETED FIX: Check if local term is historically past relative to global active term
+    const isPastRelativeToGlobal = (() => {
+        const globalActiveTermObj = terms.find(t => t.isCurrent);
+        if (!globalActiveTermObj || !localTermDetails) return false;
+        const localStartYear = parseInt(localTermDetails.termSY.split('-')[0]);
+        const globalStartYear = parseInt(globalActiveTermObj.termSY.split('-')[0]);
+        if (localStartYear < globalStartYear) return true;
+        if (localStartYear === globalStartYear) {
+            const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+            return semW[localTermDetails.termSem] < semW[globalActiveTermObj.termSem];
+        }
+        return false;
+    })();
+
+    const hasFutureStandings = historyStandings.some(s => {
+        const t = terms.find(term => term.termID === s.termID);
+        if (!t || !localTermDetails) return false;
+        const tStartYear = parseInt(t.termSY.split('-')[0]);
+        const localStartYear = parseInt(localTermDetails.termSY.split('-')[0]);
+        if (tStartYear > localStartYear) return true;
+        if (tStartYear === localStartYear) {
+            const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+            return semW[t.termSem] > semW[localTermDetails.termSem];
+        }
+        return false;
+    });
+
+    // TARGETED FIX: Project global profile onto empty term explicitly if it is the latest/active term
+    const displayYearLevel = termStanding?.yearLevel || (!isPastRelativeToGlobal && !hasFutureStandings && selectedStudent?.yearLevel > chronologicalYear ? Math.min(dynamicMaxYear, selectedStudent.yearLevel) : Math.min(dynamicMaxYear, chronologicalYear));
 
     let ghostRowYearLevel = displayYearLevel;
     if (selectedStudent && termStanding) {
@@ -226,21 +254,7 @@ export default function Evaluator() {
         if (localMajorYearLevels.length > 0) {
             const priority1YearLevel = Math.min(...localMajorYearLevels);
             if (termStanding.yearLevel === priority1YearLevel) {
-                const hasFutureStandings = historyStandings.some(s => {
-                    const t = terms.find(term => term.termID === s.termID);
-                    if (!t || !localTermDetails) return false;
-                    const tStartYear = parseInt(t.termSY.split('-')[0]);
-                    const localStartYear = parseInt(localTermDetails.termSY.split('-')[0]);
-                    if (tStartYear > localStartYear) return true;
-                    if (tStartYear === localStartYear) {
-                        const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
-                        return semW[t.termSem] > semW[localTermDetails.termSem];
-                    }
-                    return false;
-                });
-
-                if (!hasFutureStandings && selectedStudent.yearLevel > priority1YearLevel) {
-                    // Latest term: allow global profile projection
+                if (!isPastRelativeToGlobal && !hasFutureStandings && selectedStudent.yearLevel > priority1YearLevel) {
                     ghostRowYearLevel = Math.min(dynamicMaxYear, selectedStudent.yearLevel);
                 } else {
                     // TARGETED FIX: Past term: Strictly enforce the established local standing (Priority 1) over chronological math
