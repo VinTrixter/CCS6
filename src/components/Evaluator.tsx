@@ -319,7 +319,8 @@ export default function Evaluator() {
         };
         void fetchBackendData();
         return () => { isMounted = false; };
-    }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies]);
+        // TARGETED FIX: Added ghostRowYearLevel to dependency array to prevent UI desyncs requiring 2 clicks
+    }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies, ghostRowYearLevel]);
 
     const handleIDChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let val = e.target.value.replace(/\D/g, '');

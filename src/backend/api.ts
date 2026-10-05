@@ -139,9 +139,20 @@ const cascadeStandings = (
                     // TARGETED FIX: Use immutable enrollment year as baseline to prevent compounding mathematical errors.
                     effectiveYearEnrolled = student.yearEnrolled;
                 }
-
                 const termStartYear = parseInt(activeTermObj.termSY.split('-')[0]);
                 const calculatedChronologicalYear = Math.max(1, termStartYear - effectiveYearEnrolled + 1);
+
+                // TARGETED FIX: Protect manual profile advancements for empty terms.
+                // If this is the latest active term, respect the global profile year level.
+                const hasFutureStandings = [...unaffectedStandings, ...newStandings].some(ts => {
+                    if (ts.studentID !== student.studentID) return false;
+                    const tsTerm = terms.find(t => t.termID === ts.termID);
+                    return tsTerm && compareTerms(tsTerm, activeTermObj) > 0;
+                });
+
+                if (!hasFutureStandings && student.yearLevel > calculatedChronologicalYear) {
+                    return Math.min(dynamicMax, student.yearLevel);
+                }
 
                 return Math.min(dynamicMax, calculatedChronologicalYear);
             }
