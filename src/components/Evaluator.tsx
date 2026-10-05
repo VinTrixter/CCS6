@@ -241,7 +241,9 @@ export default function Evaluator() {
     });
 
     // TARGETED FIX: Project global profile onto empty term explicitly if it is the latest/active term
-    const displayYearLevel = termStanding?.yearLevel || (!isPastRelativeToGlobal && !hasFutureStandings && selectedStudent?.yearLevel > chronologicalYear ? Math.min(dynamicMaxYear, selectedStudent.yearLevel) : Math.min(dynamicMaxYear, chronologicalYear));
+    // TARGETED FIX: Safely extract student year level with a numeric fallback to satisfy strict TS compilation
+    const studentYear = selectedStudent?.yearLevel ?? 0;
+    const displayYearLevel = termStanding?.yearLevel || (!isPastRelativeToGlobal && !hasFutureStandings && studentYear > chronologicalYear ? Math.min(dynamicMaxYear, studentYear) : Math.min(dynamicMaxYear, chronologicalYear));
 
     let ghostRowYearLevel = displayYearLevel;
     if (selectedStudent && termStanding) {
@@ -254,8 +256,8 @@ export default function Evaluator() {
         if (localMajorYearLevels.length > 0) {
             const priority1YearLevel = Math.min(...localMajorYearLevels);
             if (termStanding.yearLevel === priority1YearLevel) {
-                if (!isPastRelativeToGlobal && !hasFutureStandings && selectedStudent.yearLevel > priority1YearLevel) {
-                    ghostRowYearLevel = Math.min(dynamicMaxYear, selectedStudent.yearLevel);
+                if (!isPastRelativeToGlobal && !hasFutureStandings && studentYear > priority1YearLevel) {
+                    ghostRowYearLevel = Math.min(dynamicMaxYear, studentYear);
                 } else {
                     // TARGETED FIX: Past term: Strictly enforce the established local standing (Priority 1) over chronological math
                     ghostRowYearLevel = priority1YearLevel;
