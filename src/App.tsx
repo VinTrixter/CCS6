@@ -27,11 +27,11 @@ function AppContent() {
     if (!isAuthenticated) return <Login />;
 
     return (
-        <div className={`flex h-screen flex-col font-sans transition-colors duration-300 ${isDarkMode ? "dark bg-slate-900 text-slate-100" : "bg-slate-50 text-slate-800"}`}>
-            <Header />
-            <div className="flex flex-1 overflow-hidden">
-                <Sidebar />
-                <main className="flex-1 overflow-y-auto">
+        <div className={`flex h-screen flex-col font-sans transition-colors duration-300 print:h-auto print:block ${isDarkMode ? "dark bg-slate-900 text-slate-100" : "bg-slate-50 text-slate-800 print:bg-white"}`}>
+            <div className="print:hidden"><Header /></div>
+            <div className="flex flex-1 overflow-hidden print:overflow-visible print:block">
+                <div className="print:hidden"><Sidebar /></div>
+                <main className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">
                     {activeView === "dashboard" && <Dashboard />}
                     {activeView === "evaluator" && <Evaluator />}
                     {activeView === "curriculum" && <Curriculum />}

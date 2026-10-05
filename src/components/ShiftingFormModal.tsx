@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../store/store";
 import * as I from "./icons";
+import { AcademicHistoryPrintable } from "./AcademicHistoryPrintable";
 
 interface ModalProps {
     isOpen: boolean;
@@ -10,7 +11,7 @@ interface ModalProps {
 }
 
 export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentID }: ModalProps) {
-    const { students, standings, activeTerm, activeUser, remarks, setRemarks, pushAudit } = useStore();
+    const { students, standings, activeTerm, activeUser, remarks, setRemarks, pushAudit, records, programCourses, terms, courses } = useStore();
     const [localSelectedID, setLocalSelectedID] = useState<string>("");
 
     const [filterMode, setFilterMode] = useState<'ats' | 'all'>('ats');
@@ -194,8 +195,7 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
             </div>
 
             {targetStudent && (
-                <div className="hidden print:block print:fixed print:inset-0 print:z-[9999] print:bg-white print:text-black">
-                    <style type="text/css">{`@media print { @page { size: portrait; margin: 1in; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
+                <div className="hidden print:block print:w-full print:bg-white print:text-black">
                     <div className="mx-auto max-w-[8in] font-serif text-[15px]">
 
                         <div className="mb-10 flex items-center gap-6">
@@ -260,6 +260,15 @@ export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentI
                         </div>
 
                     </div>
+
+                    {/*<AcademicHistoryPrintable 
+                        student={targetStudent}
+                        records={records}
+                        programCourses={programCourses}
+                        terms={terms}
+                        courses={courses}
+                        standings={standings}
+                    />*/}
                 </div>
             )}
         </>

@@ -41,8 +41,26 @@ const cascadeStandings = (
     modifiedTermID: string,
     skipYearLevelAutoCalc: boolean = false
 ) => {
-    const studentTermIDs = new Set(updatedRecords.filter(r => r.studentID === student.studentID).map(r => r.termID));
+    const modifiedTermObj = terms.find(t => t.termID === modifiedTermID);
+    const studentTermIDs = new Set<string>();
     studentTermIDs.add(modifiedTermID);
+
+    if (modifiedTermObj) {
+        updatedRecords.filter(r => r.studentID === student.studentID).forEach(r => {
+            const rTerm = terms.find(t => t.termID === r.termID);
+            if (rTerm && compareTerms(rTerm, modifiedTermObj) >= 0) {
+                studentTermIDs.add(r.termID);
+            }
+        });
+
+        currentStandings.filter(ts => ts.studentID === student.studentID).forEach(ts => {
+            const tsTerm = terms.find(t => t.termID === ts.termID);
+            if (tsTerm && compareTerms(tsTerm, modifiedTermObj) >= 0) {
+                studentTermIDs.add(ts.termID);
+            }
+        });
+    }
+
     const studentTerms = terms.filter(t => studentTermIDs.has(t.termID)).sort(compareTerms);
 
     const newStandings: TERM_STANDING[] = [];
@@ -223,6 +241,7 @@ const cascadeStandings = (
         let status: "Regular" | "On-Probation" | "Advised to Shift" | "Unencoded";
         const isFullyWithdrawn = !isTermIncomplete && termUnits === 0 && termRecords.length > 0;
 
+        // TARGETED FIX: Removed database ATS lock for empty terms so they remain 'Unencoded' and hidden from Academic History.
         if (isTermIncomplete) {
             status = "Unencoded";
         } else if (isFullyWithdrawn) {
@@ -725,11 +744,19 @@ export const backendAPI = {
             const majorYearLevels = curriculum.filter(pc => pc.majorMinorClassif === 'Major').map(pc => pc.yearLevel);
             const calculatedYearLevel = majorYearLevels.length > 0 ? Math.min(...majorYearLevels) : targetYearLevel;
 
-            // AFTER
+            // TARGETED FIX: Apply ATS lock to newly generated auto-populated standings
+            const pastStandings = _standings.filter(ts => {
+                if (ts.studentID !== student.studentID) return false;
+                const tsTerm = _terms.find(t => t.termID === ts.termID);
+                return tsTerm && compareTerms(tsTerm, termDetails) < 0;
+            });
+            const hasUnresolvedATS = student.accountStatus === 'Active' && pastStandings.some(ts => ts.termAcademicStatus === 'Advised to Shift' || (ts.termAcademicStatus as string) === 'Advised-to-Shift');
+
             const basicStanding: TERM_STANDING = {
                 standingID: generateID('ST-', 10),
                 termQPA: 0, semCQPA: 0,
-                termAcademicStatus: 'Unencoded', isConsecutiveOP: false,
+                termAcademicStatus: hasUnresolvedATS ? 'Advised to Shift' : 'Unencoded',
+                isConsecutiveOP: false,
                 yearLevel: calculatedYearLevel,
                 studentID: student.studentID, termID: activeTerm
             };
@@ -820,7 +847,8 @@ export const backendAPI = {
         const currentTermObj = terms.find(t => t.isCurrent);
         if (!skipYearLevelAutoCalc && currentTermObj && activeTerm === currentTermObj.termID) {
             const activeStanding = newStandings.find(ns => ns.termID === activeTerm);
-            if (activeStanding && activeStanding.yearLevel !== student.yearLevel) {
+            // TARGETED FIX: Added explicit undefined check for TypeScript safety
+            if (activeStanding && activeStanding.yearLevel !== undefined && activeStanding.yearLevel > student.yearLevel) {
                 await supabase.from('STUDENT').update({ yearLevel: activeStanding.yearLevel }).eq('studentID', student.studentID);
                 syncedYearLevel = activeStanding.yearLevel;
             }

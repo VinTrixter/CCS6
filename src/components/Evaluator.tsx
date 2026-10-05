@@ -145,6 +145,25 @@ export default function Evaluator() {
     if (currentStatus.toUpperCase() === 'UNENCODED') currentStatus = 'Unencoded';
 
     const localTermDetails = terms.find(t => t.termID === localTerm);
+
+    // TARGETED FIX: Visually project ATS lock onto the frontend profile for unencoded terms
+    if ((currentStatus === "No Data" || currentStatus === "Unencoded") && selectedStudent?.accountStatus === 'Active') {
+        const hasATS = historyStandings.some(ts => {
+            if (ts.termAcademicStatus !== 'Advised to Shift' && (ts.termAcademicStatus as string) !== 'Advised-to-Shift') return false;
+            const t = terms.find(term => term.termID === ts.termID);
+            if (!t || !localTermDetails) return false;
+            const tStartYear = parseInt(t.termSY.split('-')[0]);
+            const localStartYear = parseInt(localTermDetails.termSY.split('-')[0]);
+            if (tStartYear < localStartYear) return true;
+            if (tStartYear === localStartYear) {
+                const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+                return semW[t.termSem] < semW[localTermDetails.termSem];
+            }
+            return false;
+        });
+        if (hasATS) currentStatus = 'Advised to Shift';
+    }
+
     const activeTermObj = terms.find(t => t.termID === activeTerm);
 
     const dynamicMaxYear = selectedStudent ? (() => {
@@ -182,7 +201,7 @@ export default function Evaluator() {
                     const getSemVal = (sem: string) => sem === '1st Semester' ? 1 : sem === '2nd Semester' ? 2 : 3;
                     return getSemVal(tB.termSem) - getSemVal(tA.termSem);
                 })[0];
-                
+
                 if (mostRecent && mostRecent.yearLevel) {
                     const recentTerm = terms.find(t => t.termID === mostRecent.termID);
                     if (recentTerm) {
@@ -203,11 +222,29 @@ export default function Evaluator() {
             .map(r => programCourses.find(pc => pc.programCourseID === r.programCourseID))
             .filter(pc => pc && pc.majorMinorClassif === 'Major')
             .map(pc => Number(pc!.yearLevel) || Number((pc as any).yrLevel));
-        
+
         if (localMajorYearLevels.length > 0) {
             const priority1YearLevel = Math.min(...localMajorYearLevels);
             if (termStanding.yearLevel === priority1YearLevel) {
-                ghostRowYearLevel = Math.min(dynamicMaxYear, chronologicalYear);
+                // TARGETED FIX: Isolate global profile projection strictly to the latest active term to protect past terms and fix WSOD.
+                const hasFutureStandings = historyStandings.some(s => {
+                    const t = terms.find(term => term.termID === s.termID);
+                    if (!t || !localTermDetails) return false;
+                    const tStartYear = parseInt(t.termSY.split('-')[0]);
+                    const localStartYear = parseInt(localTermDetails.termSY.split('-')[0]);
+                    if (tStartYear > localStartYear) return true;
+                    if (tStartYear === localStartYear) {
+                        const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+                        return semW[t.termSem] > semW[localTermDetails.termSem];
+                    }
+                    return false;
+                });
+
+                if (!hasFutureStandings && selectedStudent.yearLevel > priority1YearLevel) {
+                    ghostRowYearLevel = Math.min(dynamicMaxYear, selectedStudent.yearLevel);
+                } else if (chronologicalYear > priority1YearLevel) {
+                    ghostRowYearLevel = Math.min(dynamicMaxYear, chronologicalYear);
+                }
             }
         }
     }
@@ -343,7 +380,12 @@ export default function Evaluator() {
             programCourses, courses, standings, activeUser.userID, terms, retentionPolicies
         );
 
-        if (error) return alert(error);
+        // TARGETED FIX: Safe release of processing locks to prevent permanent UI freeze on error
+        if (error) {
+            setIsLoading(false);
+            isProcessingRef.current = false;
+            return alert(error);
+        }
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
         if (updatedYearLevel !== undefined) {
@@ -359,7 +401,9 @@ export default function Evaluator() {
     };
 
     const handleGradeChange = async (code: string, val: string, recordID?: string): Promise<boolean> => {
-        if (!activeUser || !selectedStudent) return false;
+        if (!activeUser || !selectedStudent || isProcessingRef.current) return false;
+        isProcessingRef.current = true;
+        setIsLoading(true);
 
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.upsertGrade(
             code, val, recordID, selectedStudent, localTerm, records,
@@ -368,6 +412,9 @@ export default function Evaluator() {
 
         if (error) {
             alert(error);
+            // TARGETED FIX: Safe release of processing locks inside the error branch
+            setIsLoading(false);
+            isProcessingRef.current = false;
             return false;
         }
         if (recordsData) setRecords(recordsData);
@@ -378,11 +425,13 @@ export default function Evaluator() {
             setSelectedStudent(updated);
         }
         if (!recordID) pushAudit("ENCODED_NEW_GRADE", selectedStudent.studentID);
+        setIsLoading(false);
+        isProcessingRef.current = false;
         return true;
     };
 
     const handleDeleteRow = async (code: string, recordID?: string) => {
-        if (!activeUser || !selectedStudent) return;
+        if (!activeUser || !selectedStudent || isProcessingRef.current) return;
         if (!recordID) {
             setDismissedGhostRows({
                 ...dismissedGhostRows,
@@ -391,12 +440,20 @@ export default function Evaluator() {
             return;
         }
 
+        isProcessingRef.current = true;
+        setIsLoading(true);
+
         const { recordsData, standingsData, updatedYearLevel, error } = await backendAPI.deleteGradeRow(
             recordID, records, selectedStudent, localTerm,
             programCourses, courses, standings, terms, retentionPolicies
         );
 
-        if (error) return alert(error);
+        // TARGETED FIX: Safe release of processing locks to prevent permanent UI freeze on error
+        if (error) {
+            setIsLoading(false);
+            isProcessingRef.current = false;
+            return alert(error);
+        }
         if (recordsData) setRecords(recordsData);
         if (standingsData) setStandings(standingsData);
         if (updatedYearLevel !== undefined) {
@@ -409,6 +466,9 @@ export default function Evaluator() {
             [selectedStudent.studentID]: [...dismissedCourses, code]
         });
         pushAudit("DELETED_GRADE_RECORD", recordID);
+
+        setIsLoading(false);
+        isProcessingRef.current = false;
     };
 
     const handleCreateStudent = async (e: React.SyntheticEvent) => {
@@ -754,7 +814,7 @@ export default function Evaluator() {
                 </div>
 
                 <div className="relative flex-1 overflow-y-auto bg-white transition-colors">
-                    {isLoading && (<div className="absolute top-2 right-4 z-10 flex items-center justify-center"><div className="animate-pulse text-xs font-bold text-blue-700">Syncing...</div></div>)}
+                    {/* {isLoading && (<div className="absolute top-2 right-4 z-10 flex items-center justify-center"><div className="animate-pulse text-xs font-bold text-blue-700">Syncing...</div></div>)} */}
 
                     {selectedStudent ? (
                         <>
