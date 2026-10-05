@@ -814,7 +814,7 @@ export default function Evaluator() {
                 </div>
 
                 <div className="relative flex-1 overflow-y-auto bg-white transition-colors">
-                    {/* {isLoading && (<div className="absolute top-2 right-4 z-10 flex items-center justify-center"><div className="animate-pulse text-xs font-bold text-blue-700">Syncing...</div></div>)} */}
+                    {isLoading}
 
                     {selectedStudent ? (
                         <>
