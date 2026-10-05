@@ -5,6 +5,7 @@ import type { PROGRAM_COURSE, TERM_STANDING } from "../store/types";
 import { backendAPI, type EnrichedGradeRow, type EnrichedStudent } from "../backend/api";
 import ShiftingFormModal from "./ShiftingFormModal";
 import * as I from "./icons";
+// import { AcademicHistoryPrintable } from "./AcademicHistoryPrintable";
 
 type Tab = "grades" | "history" | "progress" | "remarks";
 type AdvisingCategory = "General Note" | "Guidance Referral" | "Policy Warning" | "Shifting Recommended";
@@ -87,7 +88,7 @@ export default function Evaluator() {
         }
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [showExtraCourseDropdown, showTermDropdown]);
-    
+
     const dismissedCourses = selectedStudent ? (dismissedGhostRows[selectedStudent.studentID] || EMPTY_ARRAY) : EMPTY_ARRAY;
     const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
     const [editingRemarkID, setEditingRemarkID] = useState<string | null>(null);
@@ -151,8 +152,65 @@ export default function Evaluator() {
         return progYearLevels.length > 0 ? Math.max(...progYearLevels) : 4;
     })() : 4;
 
-    const chronologicalYear = Math.max(1, parseInt(localTermDetails?.termSY.split('-')[0] || "0") - (selectedStudent?.yearEnrolled || 0) + 1);
+    const chronologicalYear = (() => {
+        if (!selectedStudent || !localTermDetails) return 1;
+        let effectiveYearEnrolled = selectedStudent.yearEnrolled;
+        const localStartYear = parseInt(localTermDetails.termSY.split('-')[0]);
+
+        const studentStandings = standings.filter(s => s.studentID === selectedStudent.studentID);
+        if (studentStandings.length > 0) {
+            const priorStandings = studentStandings.filter(s => {
+                const t = terms.find(term => term.termID === s.termID);
+                if (!t) return false;
+                const tStartYear = parseInt(t.termSY.split('-')[0]);
+                if (tStartYear < localStartYear) return true;
+                if (tStartYear === localStartYear) {
+                    const getSemVal = (sem: string) => sem === '1st Semester' ? 1 : sem === '2nd Semester' ? 2 : 3;
+                    return getSemVal(t.termSem) < getSemVal(localTermDetails.termSem);
+                }
+                return false;
+            });
+
+            if (priorStandings.length > 0) {
+                const mostRecent = priorStandings.sort((a, b) => {
+                    const tA = terms.find(t => t.termID === a.termID);
+                    const tB = terms.find(t => t.termID === b.termID);
+                    if (!tA || !tB) return 0;
+                    const yearA = parseInt(tA.termSY.split('-')[0]);
+                    const yearB = parseInt(tB.termSY.split('-')[0]);
+                    if (yearA !== yearB) return yearB - yearA;
+                    const getSemVal = (sem: string) => sem === '1st Semester' ? 1 : sem === '2nd Semester' ? 2 : 3;
+                    return getSemVal(tB.termSem) - getSemVal(tA.termSem);
+                })[0];
+                
+                if (mostRecent && mostRecent.yearLevel) {
+                    const recentTerm = terms.find(t => t.termID === mostRecent.termID);
+                    if (recentTerm) {
+                        const recentStartYear = parseInt(recentTerm.termSY.split('-')[0]);
+                        effectiveYearEnrolled = recentStartYear - mostRecent.yearLevel + 1;
+                    }
+                }
+            }
+        }
+        return Math.max(1, localStartYear - effectiveYearEnrolled + 1);
+    })();
     const displayYearLevel = termStanding?.yearLevel || Math.min(dynamicMaxYear, chronologicalYear);
+
+    let ghostRowYearLevel = displayYearLevel;
+    if (selectedStudent && termStanding) {
+        const localRecords = records.filter(r => r.studentID === selectedStudent.studentID && r.termID === localTerm);
+        const localMajorYearLevels = localRecords
+            .map(r => programCourses.find(pc => pc.programCourseID === r.programCourseID))
+            .filter(pc => pc && pc.majorMinorClassif === 'Major')
+            .map(pc => Number(pc!.yearLevel) || Number((pc as any).yrLevel));
+        
+        if (localMajorYearLevels.length > 0) {
+            const priority1YearLevel = Math.min(...localMajorYearLevels);
+            if (termStanding.yearLevel === priority1YearLevel) {
+                ghostRowYearLevel = Math.min(dynamicMaxYear, chronologicalYear);
+            }
+        }
+    }
 
     const isReadOnly = selectedStudent ? selectedStudent.accountStatus !== 'Active' : false;
 
@@ -218,7 +276,7 @@ export default function Evaluator() {
         let isMounted = true;
         const fetchBackendData = async () => {
             setIsLoading(true);
-            const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies);
+            const rows = await backendAPI.getEnrichedGrades(selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies, ghostRowYearLevel);
             const prog = await backendAPI.getCurriculumProgress(selectedStudent, activeTerm, programCourses, records, retentionPolicies);
             if (isMounted) { setDisplayRows(rows); setProgressStats(prog); setIsLoading(false); }
         };
@@ -229,11 +287,11 @@ export default function Evaluator() {
     const handleIDChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let val = e.target.value.replace(/\D/g, '');
         if (val.length > 3) {
-            val = `${val.slice(0,2)}-${val.slice(2,3)}-${val.slice(3, 10)}`;
+            val = `${val.slice(0, 2)}-${val.slice(2, 3)}-${val.slice(3, 10)}`;
         } else if (val.length > 2) {
-            val = `${val.slice(0,2)}-${val.slice(2,3)}`;
+            val = `${val.slice(0, 2)}-${val.slice(2, 3)}`;
         }
-        setFormData({...formData, studentID: val});
+        setFormData({ ...formData, studentID: val });
     };
 
     const handleAutoPopulate = async () => {
@@ -241,7 +299,7 @@ export default function Evaluator() {
         isProcessingRef.current = true;
         setIsLoading(true);
         const { data: newRecords, newStanding, updatedStudentYearLevel, error } = await backendAPI.generateAutoPopulateRecords(
-            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies, terms
+            selectedStudent, localTerm, localTermDetails, programCourses, records, activeUser.userID, activeTerm, standings, retentionPolicies, terms, displayYearLevel
         );
         if (error) {
             alert(error);
@@ -438,7 +496,7 @@ export default function Evaluator() {
             studMiddleName: middleName
         };
 
-        const { data, standingsData, error } = await backendAPI.updateStudent(updatedStudent, students, activeTerm, standings);
+        const { data, standingsData, error } = await backendAPI.updateStudent(updatedStudent, students, localTerm, standings, terms);
         if (error) {
             isProcessingRef.current = false;
             return alert(error);
@@ -455,7 +513,7 @@ export default function Evaluator() {
     const handleDeleteStudent = async () => {
         if (!selectedStudent || isProcessingRef.current) return;
         if (!window.confirm(`Are you sure you want to PERMANENTLY delete the record for ${selectedStudent.studFirstName} ${selectedStudent.studLastName}?`)) return;
-        
+
         isProcessingRef.current = true;
         const { data, error } = await backendAPI.deleteStudent(selectedStudent.studentID, students, records, standings, remarks);
         if (error) {
@@ -514,8 +572,8 @@ export default function Evaluator() {
     const sortedYears = Object.keys(groupedHistory).map(Number).sort((a, b) => b - a);
 
     return (
-        <div className="flex w-full flex-col gap-6 p-6 lg:h-full lg:flex-row lg:overflow-hidden lg:p-8">
-            <div className="flex w-full flex-col gap-4 lg:w-1/3 lg:shrink-0 lg:overflow-y-auto lg:pr-2">
+        <div className="flex w-full flex-col gap-6 p-6 lg:h-full lg:flex-row lg:overflow-hidden lg:p-8 print:h-auto print:overflow-visible print:block print:p-0">
+            <div className="print:hidden flex w-full flex-col gap-4 lg:w-1/3 lg:shrink-0 lg:overflow-y-auto lg:pr-2">
                 {can('manage_records') && (
                     <div className="flex shrink-0 gap-1 rounded-lg bg-slate-200/50 p-1 transition-colors">
                         <button onClick={() => { setLeftMode("search"); setIsEditingProfile(false); }} className={`flex-1 rounded-md py-1.5 text-xs font-bold transition ${leftMode === "search" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Find Record</button>
@@ -523,20 +581,21 @@ export default function Evaluator() {
                     </div>
                 )}
 
+
                 {leftMode === "new" && (
                     <form onSubmit={handleCreateStudent} className="flex shrink-0 flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors">
                         <div><h2 className="font-bold text-slate-800">Register New Student</h2></div>
                         <div className="flex flex-col gap-3">
                             <input required placeholder="Student ID (XX-X-XXXXX)" value={formData.studentID} onChange={handleIDChange} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm font-mono outline-none focus:border-blue-700 transition-colors" />
-                            <input required placeholder="First Name" value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
-                            <input placeholder="Middle Name (Optional)" value={formData.middleName} onChange={e => setFormData({...formData, middleName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
-                            <input required placeholder="Last Name" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
+                            <input required placeholder="First Name" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
+                            <input placeholder="Middle Name (Optional)" value={formData.middleName} onChange={e => setFormData({ ...formData, middleName: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
+                            <input required placeholder="Last Name" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
 
                             <div className="grid grid-cols-2 gap-3">
-                                <select required value={formData.programCode} onChange={e => setFormData({...formData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors"><option value="" disabled hidden>Program...</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
-                                <select required value={formData.yearLevel} onChange={e => setFormData({...formData, yearLevel: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors"><option value="" disabled hidden>Year Lvl...</option>{[1,2,3,4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
-                                <select required value={formData.shsTrack} onChange={e => setFormData({...formData, shsTrack: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors"><option value="" disabled hidden>SHS Track...</option><option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option></select>
-                                <input required type="number" placeholder="Year Enrolled" value={formData.yearEnrolled} onChange={e => setFormData({...formData, yearEnrolled: e.target.value})} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
+                                <select required value={formData.programCode} onChange={e => setFormData({ ...formData, programCode: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors"><option value="" disabled hidden>Program...</option>{programs.filter(p => !p.isArchived).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                <select required value={formData.yearLevel} onChange={e => setFormData({ ...formData, yearLevel: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors"><option value="" disabled hidden>Year Lvl...</option>{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
+                                <select required value={formData.shsTrack} onChange={e => setFormData({ ...formData, shsTrack: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors"><option value="" disabled hidden>SHS Track...</option><option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option></select>
+                                <input required type="number" placeholder="Year Enrolled" value={formData.yearEnrolled} onChange={e => setFormData({ ...formData, yearEnrolled: e.target.value })} className="w-full rounded-md border border-slate-300 bg-transparent p-2 text-sm outline-none focus:border-blue-700 transition-colors" />
                             </div>
                         </div>
                         <button type="submit" className="mt-2 w-full rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-800 transition-colors">Create Record</button>
@@ -595,23 +654,26 @@ export default function Evaluator() {
                                             </div>
                                             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
                                                 <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm ${currentStatus === 'Advised to Shift' ? 'bg-coral text-white' : currentStatus === 'On-Probation' ? 'bg-amber text-white' : currentStatus === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-700 text-white'}`}>{currentStatus}</span>
-                                                {can('manage_records') && !isEditingProfile && (<button onClick={() => { setEditFormData(selectedStudent); setIsEditingProfile(true); }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-sm hover:text-blue-700 transition-colors">Edit Profile</button>)}
+                                                <div className="flex gap-2">
+                                                    {/* activeUser?.userType === 'Deans_Office_Staff' && !isEditingProfile && (<button onClick={() => window.print()} className="print:hidden rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-sm hover:text-blue-700 transition-colors"><I.Printer className="h-3 w-3 inline mr-1 -mt-0.5" /> Print History</button>) */}
+                                                    {can('manage_records') && !isEditingProfile && (<button onClick={() => { setEditFormData({ ...selectedStudent, yearLevel: displayYearLevel as any }); setIsEditingProfile(true); }} className="print:hidden rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-sm hover:text-blue-700 transition-colors">Edit Profile</button>)}
+                                                </div>
                                             </div>
                                         </div>
 
                                         {isEditingProfile && editFormData ? (
                                             <div className="mt-5 flex flex-col gap-3 rounded-lg border border-blue-100 bg-slate-50 p-4 text-sm transition-colors">
-                                                <input type="text" placeholder="First Name" value={editFormData.studFirstName} onChange={e => setEditFormData({...editFormData, studFirstName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
-                                                <input type="text" placeholder="Middle Name" value={editFormData.studMiddleName || ""} onChange={e => setEditFormData({...editFormData, studMiddleName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
-                                                <input type="text" placeholder="Last Name" value={editFormData.studLastName} onChange={e => setEditFormData({...editFormData, studLastName: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
+                                                <input type="text" placeholder="First Name" value={editFormData.studFirstName} onChange={e => setEditFormData({ ...editFormData, studFirstName: e.target.value })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
+                                                <input type="text" placeholder="Middle Name" value={editFormData.studMiddleName || ""} onChange={e => setEditFormData({ ...editFormData, studMiddleName: e.target.value })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
+                                                <input type="text" placeholder="Last Name" value={editFormData.studLastName} onChange={e => setEditFormData({ ...editFormData, studLastName: e.target.value })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
 
                                                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({...editFormData, programCode: e.target.value})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{programs.filter(p => !p.isArchived || p.programCode === editFormData.programCode).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
-                                                    <select value={editFormData.yearLevel} onChange={e => setEditFormData({...editFormData, yearLevel: Number(e.target.value) as EnrichedStudent["yearLevel"]})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
-                                                    <select value={editFormData.shsTrack} onChange={e => setEditFormData({...editFormData, shsTrack: e.target.value as EnrichedStudent["shsTrack"]})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">
+                                                    <select value={editFormData.programCode} onChange={e => setEditFormData({ ...editFormData, programCode: e.target.value })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{programs.filter(p => !p.isArchived || p.programCode === editFormData.programCode).map(p => <option key={p.programCode} value={p.programCode}>{p.programCode}</option>)}</select>
+                                                    <select value={editFormData.yearLevel} onChange={e => setEditFormData({ ...editFormData, yearLevel: Number(e.target.value) as EnrichedStudent["yearLevel"] })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">{[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}</select>
+                                                    <select value={editFormData.shsTrack} onChange={e => setEditFormData({ ...editFormData, shsTrack: e.target.value as EnrichedStudent["shsTrack"] })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors">
                                                         <option>STEM</option><option>HUMSS</option><option>ABM</option><option>GAS</option><option>TVL</option>
                                                     </select>
-                                                    <input type="number" placeholder="Year Enrolled" value={editFormData.yearEnrolled} onChange={e => setEditFormData({...editFormData, yearEnrolled: Number(e.target.value)})} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
+                                                    <input type="number" placeholder="Year Enrolled" value={editFormData.yearEnrolled} onChange={e => setEditFormData({ ...editFormData, yearEnrolled: Number(e.target.value) })} className="w-full rounded-md border border-slate-300 bg-white p-1.5 text-sm outline-none focus:border-blue-700 transition-colors" />
                                                 </div>
 
                                                 <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3">
@@ -640,8 +702,8 @@ export default function Evaluator() {
                                                         disabled={!can('archive_student')}
                                                         value={selectedStudent.accountStatus}
                                                         onChange={async (e) => {
-                                                            const updated = {...selectedStudent, accountStatus: e.target.value as "Active" | "Inactive" | "Graduated"};
-                                                            const { data, standingsData, error } = await backendAPI.updateStudent(updated, students, activeTerm, standings);
+                                                            const updated = { ...selectedStudent, accountStatus: e.target.value as "Active" | "Inactive" | "Graduated", yearLevel: displayYearLevel as any };
+                                                            const { data, standingsData, error } = await backendAPI.updateStudent(updated, students, localTerm, standings, terms);
                                                             if (error) return alert(error);
                                                             if (data) setStudents(students.map(s => s.studentID === updated.studentID ? updated : s));
                                                             if (standingsData) setStandings(standingsData);
@@ -684,7 +746,7 @@ export default function Evaluator() {
                 )}
             </div>
 
-            <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors">
+            <div className="print:hidden flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors">
                 <div className="flex border-b border-slate-200 bg-slate-50 px-2 pt-2">
                     {[{ id: "grades", label: "Grade Encoding" }, { id: "history", label: "Academic History" }, { id: "progress", label: "Curriculum Progress" }, { id: "remarks", label: "Advising Remarks" }].map(tab => (
                         <button key={tab.id} onClick={() => setActiveTab(tab.id as Tab)} disabled={!selectedStudent} className={`px-5 py-3 text-sm font-semibold transition-colors disabled:opacity-40 ${activeTab === tab.id && selectedStudent ? "border-b-2 border-blue-700 text-blue-700" : "text-slate-500 hover:text-slate-700"}`}>{tab.label}</button>
@@ -772,32 +834,32 @@ export default function Evaluator() {
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left text-sm text-slate-600">
                                             <thead className="bg-slate-50 text-xs uppercase text-slate-400 border-b border-slate-100">
-                                            <tr>
-                                                <th className="px-5 py-4 font-semibold min-w-[200px]">Course</th>
-                                                <th className="px-5 py-4 text-center font-semibold min-w-[100px]">Units</th>
-                                                <th className="px-5 py-4 text-center font-semibold min-w-[150px]">Validations</th>
-                                                <th className="px-5 py-4 font-semibold min-w-[150px]">Final Grade</th>
-                                                <th className="px-5 py-4 text-right font-semibold whitespace-nowrap w-24 sticky right-0 bg-slate-50 shadow-[-5px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">Actions</th>
-                                            </tr>
+                                                <tr>
+                                                    <th className="px-5 py-4 font-semibold min-w-[200px]">Course</th>
+                                                    <th className="px-5 py-4 text-center font-semibold min-w-[100px]">Units</th>
+                                                    <th className="px-5 py-4 text-center font-semibold min-w-[150px]">Validations</th>
+                                                    <th className="px-5 py-4 font-semibold min-w-[150px]">Final Grade</th>
+                                                    <th className="px-5 py-4 text-right font-semibold whitespace-nowrap w-24 sticky right-0 bg-slate-50 shadow-[-5px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">Actions</th>
+                                                </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                            {displayRows.map(row => (
-                                                <tr key={row.courseCode} className="transition hover:bg-slate-50">
-                                                    <td className="px-5 py-4"><div className="font-bold text-slate-800">{row.courseCode}</div><div className="text-xs text-slate-500">{row.courseTitle}</div></td>
-                                                    <td className="px-5 py-4 text-center font-mono">{row.courseUnits}</td>
-                                                    <td className="px-5 py-4 text-center">{row.isMissingPrereq ? (<span className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700"><I.Warning className="h-3 w-3" /> PREREQ MISSING</span>) : (<span className="text-[10px] font-bold text-blue-700">OK</span>)}</td>
-                                                    <td className="px-5 py-4">
-                                                        <GradeInput
-                                                            initialValue={row.finalGrade}
-                                                            disabled={!can('encode_grades') || isReadOnly}
-                                                            onSave={(val) => handleGradeChange(row.courseCode, val, row.recordID)}
-                                                        />
-                                                    </td>
-                                                    <td className="px-5 py-4 text-right whitespace-nowrap w-24 sticky right-0 bg-white shadow-[-5px_0_15px_-3px_rgba(0,0,0,0.05)]">
-                                                        {can('encode_grades') && row.isBlank && !isReadOnly && (<button onClick={() => handleDeleteRow(row.courseCode, row.recordID)} className="rounded p-1 text-slate-400 transition hover:bg-red-50 hover:text-coral"><I.X className="h-4 w-4" /></button>)}
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                                {displayRows.map(row => (
+                                                    <tr key={row.courseCode} className="transition hover:bg-slate-50">
+                                                        <td className="px-5 py-4"><div className="font-bold text-slate-800">{row.courseCode}</div><div className="text-xs text-slate-500">{row.courseTitle}</div></td>
+                                                        <td className="px-5 py-4 text-center font-mono">{row.courseUnits}</td>
+                                                        <td className="px-5 py-4 text-center">{row.isMissingPrereq ? (<span className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700"><I.Warning className="h-3 w-3" /> PREREQ MISSING</span>) : (<span className="text-[10px] font-bold text-blue-700">OK</span>)}</td>
+                                                        <td className="px-5 py-4">
+                                                            <GradeInput
+                                                                initialValue={row.finalGrade}
+                                                                disabled={!can('encode_grades') || isReadOnly}
+                                                                onSave={(val) => handleGradeChange(row.courseCode, val, row.recordID)}
+                                                            />
+                                                        </td>
+                                                        <td className="px-5 py-4 text-right whitespace-nowrap w-24 sticky right-0 bg-white shadow-[-5px_0_15px_-3px_rgba(0,0,0,0.05)]">
+                                                            {can('encode_grades') && row.isBlank && !isReadOnly && (<button onClick={() => handleDeleteRow(row.courseCode, row.recordID)} className="rounded p-1 text-slate-400 transition hover:bg-red-50 hover:text-coral"><I.X className="h-4 w-4" /></button>)}
+                                                        </td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
@@ -807,79 +869,79 @@ export default function Evaluator() {
                             {activeTab === "history" && (
                                 <table className="w-full text-left text-sm text-slate-600">
                                     <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-400">
-                                    <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">TQPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
+                                        <tr><th className="px-5 py-4 font-semibold">Term / Semester</th><th className="px-5 py-4 font-semibold">TQPA</th><th className="px-5 py-4 font-semibold">CQPA</th><th className="px-5 py-4 text-right font-semibold">Status</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                    {sortedYears.map(year => (
-                                        <React.Fragment key={`ylvl-${year}`}>
-                                            <tr className="bg-slate-100">
-                                                <td colSpan={4} className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-slate-600">
-                                                    Year Level {year}
-                                                </td>
-                                            </tr>
-                                            {groupedHistory[year].sort((a,b) => {
-                                                const tA = terms.find(t=>t.termID===a.termID);
-                                                const tB = terms.find(t=>t.termID===b.termID);
-                                                if(!tA || !tB) return 0;
-                                                if (tA.termSY !== tB.termSY) return tB.termSY.localeCompare(tA.termSY);
-                                                const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
-                                                return semW[tB.termSem] - semW[tA.termSem];
-                                            }).map(ts => {
-                                                const term = terms.find(t => t.termID === ts.termID);
-                                                // PHASE 4 FIX: Swapped accordion mapping key from termID to deterministic standingID
-                                                const isExpanded = expandedTerms[ts.standingID];
-                                                let histStatus = ts.termAcademicStatus as string;
-                                                if (histStatus.toUpperCase() === 'ADVISED-TO-SHIFT') histStatus = 'Advised to Shift';
-                                                if (histStatus.toUpperCase() === 'ON-PROBATION') histStatus = 'On-Probation';
-                                                if (histStatus.toUpperCase() === 'REGULAR') histStatus = 'Regular';
-                                                if (histStatus.toUpperCase() === 'UNENCODED') histStatus = 'Unencoded';
+                                        {sortedYears.map(year => (
+                                            <React.Fragment key={`ylvl-${year}`}>
+                                                <tr className="bg-slate-100">
+                                                    <td colSpan={4} className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-slate-600">
+                                                        Year Level {year}
+                                                    </td>
+                                                </tr>
+                                                {groupedHistory[year].sort((a, b) => {
+                                                    const tA = terms.find(t => t.termID === a.termID);
+                                                    const tB = terms.find(t => t.termID === b.termID);
+                                                    if (!tA || !tB) return 0;
+                                                    if (tA.termSY !== tB.termSY) return tB.termSY.localeCompare(tA.termSY);
+                                                    const semW: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
+                                                    return semW[tB.termSem] - semW[tA.termSem];
+                                                }).map(ts => {
+                                                    const term = terms.find(t => t.termID === ts.termID);
+                                                    // PHASE 4 FIX: Swapped accordion mapping key from termID to deterministic standingID
+                                                    const isExpanded = expandedTerms[ts.standingID];
+                                                    let histStatus = ts.termAcademicStatus as string;
+                                                    if (histStatus.toUpperCase() === 'ADVISED-TO-SHIFT') histStatus = 'Advised to Shift';
+                                                    if (histStatus.toUpperCase() === 'ON-PROBATION') histStatus = 'On-Probation';
+                                                    if (histStatus.toUpperCase() === 'REGULAR') histStatus = 'Regular';
+                                                    if (histStatus.toUpperCase() === 'UNENCODED') histStatus = 'Unencoded';
 
-                                                return (
-                                                    <React.Fragment key={ts.standingID}>
-                                                        <tr onClick={() => setExpandedTerms({...expandedTerms, [ts.standingID]: !isExpanded})} className="cursor-pointer transition hover:bg-slate-50">
-                                                            <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800">{term?.termSem}</div><div className="text-xs text-slate-500">AY {term?.termSY}</div></div></td>
-                                                            <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800">{ts.semCQPA.toFixed(2)}</td>
-                                                            <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${histStatus === 'Advised to Shift' ? 'bg-coral-tint text-coral' : histStatus === 'On-Probation' ? 'bg-amber-tint text-amber' : histStatus === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>{histStatus}</span></td>
-                                                        </tr>
-                                                        {isExpanded && (
-                                                            <tr>
-                                                                <td colSpan={4} className="bg-slate-50/50 p-0 border-b border-slate-100">
-                                                                    <div className="px-10 py-4">
-                                                                        <table className="w-full text-xs text-left text-slate-600">
-                                                                            <thead>
-                                                                            <tr className="border-b border-slate-200 text-slate-500">
-                                                                                <th className="py-2">Course Code</th>
-                                                                                <th className="py-2">Units</th>
-                                                                                <th className="py-2 text-right">Final Grade</th>
-                                                                            </tr>
-                                                                            </thead>
-                                                                            <tbody>
-                                                                            {records.filter(r => r.studentID === selectedStudent?.studentID && r.termID === ts.termID).filter(rec => {
-                                                                                if (rec.finalGrade === null && rec.gradeRemarks === null) return false;
-                                                                                const hasGradedDuplicate = records.some(dup => dup.recordID !== rec.recordID && dup.studentID === selectedStudent?.studentID && dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
-                                                                                return !hasGradedDuplicate;
-                                                                            }).map(rec => {
-                                                                                const pc = programCourses.find(p => p.programCourseID === rec.programCourseID);
-                                                                                return (
-                                                                                    <tr key={rec.recordID} className="border-b border-slate-100 last:border-0">
-                                                                                        <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
-                                                                                        <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
-                                                                                        <td className="py-2 text-right font-mono font-bold text-slate-800">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade.toFixed(2)) : (rec.gradeRemarks || '-')}</td>
-                                                                                    </tr>
-                                                                                )
-                                                                            })}
-                                                                            </tbody>
-                                                                        </table>
-                                                                    </div>
-                                                                </td>
+                                                    return (
+                                                        <React.Fragment key={ts.standingID}>
+                                                            <tr onClick={() => setExpandedTerms({ ...expandedTerms, [ts.standingID]: !isExpanded })} className="cursor-pointer transition hover:bg-slate-50">
+                                                                <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800">{term?.termSem}</div><div className="text-xs text-slate-500">AY {term?.termSY}</div></div></td>
+                                                                <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800">{ts.semCQPA.toFixed(2)}</td>
+                                                                <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${histStatus === 'Advised to Shift' ? 'bg-coral-tint text-coral' : histStatus === 'On-Probation' ? 'bg-amber-tint text-amber' : histStatus === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>{histStatus}</span></td>
                                                             </tr>
-                                                        )}
-                                                    </React.Fragment>
-                                                );
-                                            })}
-                                        </React.Fragment>
-                                    ))}
-                                    {historyStandings.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">No academic history records found.</td></tr>}
+                                                            {isExpanded && (
+                                                                <tr>
+                                                                    <td colSpan={4} className="bg-slate-50/50 p-0 border-b border-slate-100">
+                                                                        <div className="px-10 py-4">
+                                                                            <table className="w-full text-xs text-left text-slate-600">
+                                                                                <thead>
+                                                                                    <tr className="border-b border-slate-200 text-slate-500">
+                                                                                        <th className="py-2">Course Code</th>
+                                                                                        <th className="py-2">Units</th>
+                                                                                        <th className="py-2 text-right">Final Grade</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {records.filter(r => r.studentID === selectedStudent?.studentID && r.termID === ts.termID).filter(rec => {
+                                                                                        if (rec.finalGrade === null && rec.gradeRemarks === null) return false;
+                                                                                        const hasGradedDuplicate = records.some(dup => dup.recordID !== rec.recordID && dup.studentID === selectedStudent?.studentID && dup.termID === ts.termID && dup.programCourseID === rec.programCourseID && (dup.finalGrade !== null || dup.gradeRemarks !== null));
+                                                                                        return !hasGradedDuplicate;
+                                                                                    }).map(rec => {
+                                                                                        const pc = programCourses.find(p => p.programCourseID === rec.programCourseID);
+                                                                                        return (
+                                                                                            <tr key={rec.recordID} className="border-b border-slate-100 last:border-0">
+                                                                                                <td className="py-2 font-bold">{pc?.courseCode || 'Unknown'}</td>
+                                                                                                <td className="py-2">{courses.find(c => c.courseCode === pc?.courseCode)?.courseUnits || 0}</td>
+                                                                                                <td className="py-2 text-right font-mono font-bold text-slate-800">{rec.finalGrade !== null ? (rec.finalGrade === 0 ? "F" : rec.finalGrade.toFixed(2)) : (rec.gradeRemarks || '-')}</td>
+                                                                                            </tr>
+                                                                                        )
+                                                                                    })}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </React.Fragment>
+                                        ))}
+                                        {historyStandings.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">No academic history records found.</td></tr>}
                                     </tbody>
                                 </table>
                             )}
@@ -930,14 +992,14 @@ export default function Evaluator() {
                                     {can('add_remarks') && (
                                         <form onSubmit={handleSaveRemark} className="border-t border-slate-200 bg-white p-4 shadow-sm transition-colors">
                                             {!editingRemarkID && (
-                                                <select disabled={isReadOnly} value={remarkForm.category} onChange={e => setRemarkForm({...remarkForm, category: e.target.value as AdvisingCategory})} className="mb-3 w-1/3 rounded-md border border-slate-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                <select disabled={isReadOnly} value={remarkForm.category} onChange={e => setRemarkForm({ ...remarkForm, category: e.target.value as AdvisingCategory })} className="mb-3 w-1/3 rounded-md border border-slate-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
                                                     <option>General Note</option>
                                                     <option>Guidance Referral</option>
                                                     <option>Policy Warning</option>
                                                     <option>Shifting Recommended</option>
                                                 </select>
                                             )}
-                                            <textarea disabled={isReadOnly} required value={remarkForm.content} onChange={e => setRemarkForm({...remarkForm, content: e.target.value})} placeholder="Enter advising remark here..." className="w-full resize-none rounded-lg border border-slate-300 bg-transparent p-3 text-sm outline-none focus:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed" rows={3}></textarea>
+                                            <textarea disabled={isReadOnly} required value={remarkForm.content} onChange={e => setRemarkForm({ ...remarkForm, content: e.target.value })} placeholder="Enter advising remark here..." className="w-full resize-none rounded-lg border border-slate-300 bg-transparent p-3 text-sm outline-none focus:border-blue-700 disabled:opacity-50 disabled:cursor-not-allowed" rows={3}></textarea>
                                             <div className="mt-3 flex items-center gap-3">
                                                 <button disabled={isReadOnly} type="submit" className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800 transition disabled:opacity-50 disabled:cursor-not-allowed">{editingRemarkID ? "Update Remark" : "Save Remark"}</button>
                                                 {editingRemarkID && <button type="button" onClick={() => { setEditingRemarkID(null); setRemarkForm({ category: "General Note", content: "" }); }} className="text-sm font-semibold text-slate-500 hover:text-slate-700 transition">Cancel</button>}
@@ -952,6 +1014,17 @@ export default function Evaluator() {
             </div>
 
             <ShiftingFormModal isOpen={showShiftingModal} onClose={() => setShowShiftingModal(false)} preselectedStudentID={selectedStudent?.studentID} />
+
+            {/* !showShiftingModal && selectedStudent && (
+                <AcademicHistoryPrintable
+                    student={selectedStudent}
+                    records={records}
+                    programCourses={programCourses}
+                    terms={terms}
+                    courses={courses}
+                    standings={standings}
+                />
+            ) */}
         </div>
     );
 }
