@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useStore } from "../store/store";
 import * as I from "./icons";
-import { AcademicHistoryPrintable } from "./AcademicHistoryPrintable";
+//import { AcademicHistoryPrintable } from "./AcademicHistoryPrintable";
 
 interface ModalProps {
     isOpen: boolean;
@@ -11,7 +11,8 @@ interface ModalProps {
 }
 
 export default function ShiftingFormModal({ isOpen, onClose, preselectedStudentID }: ModalProps) {
-    const { students, standings, activeTerm, activeUser, remarks, setRemarks, pushAudit, records, programCourses, terms, courses } = useStore();
+    //const { students, standings, activeTerm, activeUser, remarks, setRemarks, pushAudit, records, programCourses, terms, courses } = useStore();
+    const { students, standings, activeTerm, activeUser, remarks, setRemarks, pushAudit } = useStore();
     const [localSelectedID, setLocalSelectedID] = useState<string>("");
 
     const [filterMode, setFilterMode] = useState<'ats' | 'all'>('ats');
