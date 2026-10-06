@@ -768,11 +768,11 @@ export default function Evaluator() {
                                             <div className="mt-5 flex flex-wrap lg:grid lg:grid-cols-12 gap-y-4 gap-x-4 lg:gap-x-6 rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors">
                                                 <div className="flex-1 min-w-fit lg:col-span-4">
                                                     <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">TQPA</div>
-                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{termStanding?.termQPA?.toFixed(2) || "0.00"}</div>
+                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{termStanding?.termQPA?.toFixed(3) || "0.000"}</div>
                                                 </div>
                                                 <div className="flex-1 min-w-fit lg:col-span-4">
                                                     <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">CQPA</div>
-                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{displayCQPA.toFixed(2)}</div>
+                                                    <div className="font-mono text-lg lg:text-xl font-bold text-slate-800">{displayCQPA.toFixed(3)}</div>
                                                 </div>
                                                 <div className="flex-1 min-w-[100px] lg:col-span-4">
                                                     <div className="whitespace-nowrap text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-slate-400">Account</div>
@@ -978,7 +978,7 @@ export default function Evaluator() {
                                                         <React.Fragment key={ts.standingID}>
                                                             <tr onClick={() => setExpandedTerms({ ...expandedTerms, [ts.standingID]: !isExpanded })} className="cursor-pointer transition hover:bg-slate-50">
                                                                 <td className="flex items-center gap-3 px-5 py-4"><I.ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} /><div><div className="font-bold text-slate-800">{term?.termSem}</div><div className="text-xs text-slate-500">AY {term?.termSY}</div></div></td>
-                                                                <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(2)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800">{ts.semCQPA.toFixed(2)}</td>
+                                                                <td className="px-5 py-4 font-mono">{ts.termQPA.toFixed(3)}</td><td className="px-5 py-4 font-mono font-bold text-slate-800">{ts.semCQPA.toFixed(3)}</td>
                                                                 <td className="px-5 py-4 text-right"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${histStatus === 'Advised to Shift' ? 'bg-coral-tint text-coral' : histStatus === 'On-Probation' ? 'bg-amber-tint text-amber' : histStatus === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>{histStatus}</span></td>
                                                             </tr>
                                                             {isExpanded && (
@@ -1050,7 +1050,7 @@ export default function Evaluator() {
                                                 <div className="mb-2 flex justify-between">
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-xs font-bold text-slate-700">
-                                                            {remark.COMPASS_USER ? `${remark.COMPASS_USER.userFirstName} ${remark.COMPASS_USER.userLastName}` : "Unknown User"}
+                                                            {remark.COMPASS_USER ? `${remark.COMPASS_USER.userFirstName} ${remark.COMPASS_USER.userLastName}` : "System"}
                                                         </span>
                                                         <span className="text-xs text-slate-400">
                                                             {new Date(remark.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}

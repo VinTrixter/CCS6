@@ -67,12 +67,12 @@ export default function Reports() {
         let displayCQPA = record.semCQPA || 0;
         if (displayCQPA === 0 && record.student?.accountStatus === 'Active') {
             const studentStandings = standings.filter(s => s.studentID === record.student.studentID);
-            
+
             const pastStandings = studentStandings.filter(s => {
                 const t = terms.find(term => term.termID === s.termID);
                 const aT = targetTermDetails;
                 if (!t || !aT) return false;
-                
+
                 if (parseInt(t.termSY.split('-')[0]) < parseInt(aT.termSY.split('-')[0])) return true;
                 if (t.termSY === aT.termSY) {
                     const semWeights: Record<string, number> = { "1st Semester": 1, "2nd Semester": 2, "Midyear": 3 };
@@ -212,8 +212,8 @@ export default function Reports() {
                                         <div className="font-semibold text-slate-700 print:text-black">{record.student?.programCode}</div>
                                         <div className="text-xs text-slate-500">Year {calcYearLevel(record)}</div>
                                     </td>
-                                    <td className="px-5 py-3 text-center font-mono">{record.termQPA.toFixed(2)}</td>
-                                    <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 print:text-black">{calcDisplayCQPA(record).toFixed(2)}</td>
+                                    <td className="px-5 py-3 text-center font-mono">{record.termQPA.toFixed(3)}</td>
+                                    <td className="px-5 py-3 text-center font-mono font-bold text-slate-800 print:text-black">{calcDisplayCQPA(record).toFixed(3)}</td>
                                     <td className="px-5 py-3 text-right">
                                         <span className={`print:hidden inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${status === 'Advised to Shift' ? 'bg-coral-tint text-coral' : status === 'On-Probation' ? 'bg-amber-tint text-amber' : status === 'Unencoded' ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-700'}`}>{status}</span>
                                         <span className="hidden text-xs font-bold uppercase print:inline">{status}</span>

@@ -121,8 +121,8 @@ export default function Dashboard() {
                                         <tr key={`${ts.standingID}-${ts.targetTermID}`} className="transition hover:bg-slate-50">
                                             <td className="px-5 py-4 font-mono font-bold text-slate-800">{ts.studentID}</td>
                                             <td className="px-5 py-4 font-mono font-bold text-slate-800">
-                                                {ts.semCQPA.toFixed(2)}
-                                                <span className="block text-[11px] font-normal text-slate-400">TQPA: {ts.termQPA.toFixed(2)}</span>
+                                                {ts.semCQPA.toFixed(3)}
+                                                <span className="block text-[11px] font-normal text-slate-400">TQPA: {ts.termQPA.toFixed(3)}</span>
                                             </td>
                                             <td className="px-5 py-4">
                                                 <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ts.termAcademicStatus === 'Advised to Shift' ? 'bg-slate-200 text-slate-800' : 'bg-blue-100 text-blue-800'}`}>
