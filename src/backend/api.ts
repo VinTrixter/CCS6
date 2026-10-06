@@ -191,7 +191,7 @@ const cascadeStandings = (
             }
         });
         const rawTermQPA = termUnits > 0 ? (termPoints / termUnits) : 0.0;
-        const termQPA = Math.round(rawTermQPA * 100) / 100;
+        const termQPA = Math.round(rawTermQPA * 1000) / 1000;
 
         const highestGradeMap = new Map<string, number>();
         rawHistRecords.forEach(record => {
@@ -213,7 +213,7 @@ const cascadeStandings = (
             cqpaUnits += units;
         });
         const rawSemCQPA = cqpaUnits > 0 ? (cqpaPoints / cqpaUnits) : 0.0;
-        const semCQPA = Math.round(rawSemCQPA * 100) / 100;
+        const semCQPA = Math.round(rawSemCQPA * 1000) / 1000;
 
         let majorStrikeTriggered = false;
         const majorFailures = new Map<string, number>();
