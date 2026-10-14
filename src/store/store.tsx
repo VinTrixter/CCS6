@@ -1,5 +1,3 @@
-// src/store/store.tsx
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from "react";
 import type { ReactNode, Dispatch, SetStateAction } from "react";
 import { backendAPI, type EnrichedStudent } from "../backend/api";
@@ -102,7 +100,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
     const [retentionPolicies, setRetentionPolicies] = useState<RETENTION_POLICY[]>([]);
     const [systemSettings, setSystemSettings] = useState<SYSTEM_SETTINGS | null>(null);
 
-    // PHASE 2 FIX: Lazy evaluation to dynamically lock default route to Evaluator for Faculty to prevent hard-reload bypasses
     const [activeView, setActiveView] = useState<View>(() => {
         const storedUser = sessionStorage.getItem('compass_user');
         const storedView = sessionStorage.getItem('compass_activeView') as View | null;
@@ -114,7 +111,6 @@ export const CompassProvider = ({ children }: { children: ReactNode }) => {
                     return "evaluator";
                 }
             } catch (e) {
-                // Ignore parsing errors
             }
         }
         return storedView || "dashboard";
