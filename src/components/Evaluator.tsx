@@ -146,7 +146,6 @@ export default function Evaluator() {
 
     const localTermDetails = terms.find(t => t.termID === localTerm);
 
-    // TARGETED FIX: Visually project ATS lock onto the frontend profile for unencoded terms
     if ((currentStatus === "No Data" || currentStatus === "Unencoded") && selectedStudent?.accountStatus === 'Active') {
         const hasATS = historyStandings.some(ts => {
             if (ts.termAcademicStatus !== 'Advised to Shift' && (ts.termAcademicStatus as string) !== 'Advised-to-Shift') return false;
@@ -213,7 +212,7 @@ export default function Evaluator() {
         }
         return Math.max(1, localStartYear - effectiveYearEnrolled + 1);
     })();
-    // TARGETED FIX: Check if local term is historically past relative to global active term
+
     const isPastRelativeToGlobal = (() => {
         const globalActiveTermObj = terms.find(t => t.isCurrent);
         if (!globalActiveTermObj || !localTermDetails) return false;
@@ -240,8 +239,7 @@ export default function Evaluator() {
         return false;
     });
 
-    // TARGETED FIX: Project global profile onto empty term explicitly if it is the latest/active term
-    // TARGETED FIX: Safely extract student year level with a numeric fallback to satisfy strict TS compilation
+
     const studentYear = selectedStudent?.yearLevel ?? 0;
     const displayYearLevel = termStanding?.yearLevel || (!isPastRelativeToGlobal && !hasFutureStandings && studentYear > chronologicalYear ? Math.min(dynamicMaxYear, studentYear) : Math.min(dynamicMaxYear, chronologicalYear));
 
@@ -259,7 +257,6 @@ export default function Evaluator() {
                 if (!isPastRelativeToGlobal && !hasFutureStandings && studentYear > priority1YearLevel) {
                     ghostRowYearLevel = Math.min(dynamicMaxYear, studentYear);
                 } else {
-                    // TARGETED FIX: Past term: Strictly enforce the established local standing (Priority 1) over chronological math
                     ghostRowYearLevel = priority1YearLevel;
                 }
             }
@@ -336,7 +333,7 @@ export default function Evaluator() {
         };
         void fetchBackendData();
         return () => { isMounted = false; };
-        // TARGETED FIX: Added ghostRowYearLevel to dependency array to prevent UI desyncs requiring 2 clicks
+
     }, [selectedStudent, localTerm, localTermDetails, programCourses, courses, records, coursePrerequisites, dismissedCourses, activeTerm, retentionPolicies, ghostRowYearLevel]);
 
     const handleIDChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -398,7 +395,6 @@ export default function Evaluator() {
             programCourses, courses, standings, activeUser.userID, terms, retentionPolicies
         );
 
-        // TARGETED FIX: Safe release of processing locks to prevent permanent UI freeze on error
         if (error) {
             setIsLoading(false);
             isProcessingRef.current = false;
@@ -430,7 +426,6 @@ export default function Evaluator() {
 
         if (error) {
             alert(error);
-            // TARGETED FIX: Safe release of processing locks inside the error branch
             setIsLoading(false);
             isProcessingRef.current = false;
             return false;
@@ -466,7 +461,6 @@ export default function Evaluator() {
             programCourses, courses, standings, terms, retentionPolicies
         );
 
-        // TARGETED FIX: Safe release of processing locks to prevent permanent UI freeze on error
         if (error) {
             setIsLoading(false);
             isProcessingRef.current = false;
