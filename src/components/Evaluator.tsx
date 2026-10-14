@@ -376,8 +376,6 @@ export default function Evaluator() {
         isProcessingRef.current = true;
         setIsLoading(true);
 
-        // PHASE 3 FIX: Intercept manual additions if the subject was previously dismissed as a ghost row.
-        // This instantly brings the ghost row back to the UI without saving a blank database row.
         if (dismissedCourses.includes(courseCode)) {
             setDismissedGhostRows({
                 ...dismissedGhostRows,
