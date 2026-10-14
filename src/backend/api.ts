@@ -64,7 +64,6 @@ const cascadeStandings = (
     const studentTerms = terms.filter(t => studentTermIDs.has(t.termID)).sort(compareTerms);
 
     const newStandings: TERM_STANDING[] = [];
-    // TARGETED FIX: Only exclude the specific terms being recalculated for this student, retaining their history.
     const unaffectedStandings = currentStandings.filter(ts => ts.studentID !== student.studentID || !studentTermIDs.has(ts.termID));
 
     const sanitizeRecords = (rawRecords: ACADEMIC_RECORD[]) => {
